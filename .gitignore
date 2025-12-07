@@ -1,0 +1,47 @@
+# ==== Node / NPM ====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ==== Build output ====
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# ==== VS Code extension specific ====
+.vscode-test/
+*.vsix
+.vscode
+
+# ==== IDE / ОС мусор ====
+# VS Code настройки пользователя (workspace-специфичные можно хранить, если нужно)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# JetBrains, если вдруг
+.idea/
+*.iml
+
+# ОС
+.DS_Store
+Thumbs.db
+
+# ==== Logs / temp ====
+*.log
+logs/
+tmp/
+temp/
+
+# ==== Env / секреты (если появятся) ====
+.env
+.env.*

@@ -1,0 +1,6 @@
+# default all file is CRLF
+* text eol=crlf
+
+# exception for LF – should be added below:
+# *.sh text eol=lf
+# *.yml text eol=lf
