@@ -4,14 +4,14 @@ import {
 } from './parser/types';
 import { TsRegexParserBackend } from './parser/tsRegexBackend';
 
-// текущий индекс дизайна, чтобы DefinitionProvider мог его видеть
+// Current design index so DefinitionProvider can see it
 let currentDesign: ParsedDesign | null = null;
 
-// -------------------- Узлы для Project Tree --------------------
+// -------------------- Nodes for Project Tree --------------------
 
 interface TempNode {
     children: Map<string, TempNode>;
-    uri?: vscode.Uri; // файл
+    uri?: vscode.Uri; // file
 }
 
 class VerilogNode extends vscode.TreeItem {
@@ -23,9 +23,9 @@ class VerilogNode extends vscode.TreeItem {
         collapsibleState: vscode.TreeItemCollapsibleState,
         options?: {
             children?: VerilogNode[];
-            uri?: vscode.Uri;              // файл
-            location?: vscode.Location;    // модуль
-            moduleName?: string;           // имя модуля
+            uri?: vscode.Uri;              // file
+            location?: vscode.Location;    // module
+            moduleName?: string;           // module name
         },
     ) {
         super(label, collapsibleState);
@@ -33,7 +33,7 @@ class VerilogNode extends vscode.TreeItem {
         this.moduleName = options?.moduleName;
 
         if (options?.location) {
-            // Узел модуля
+            // Module node
             this.command = {
                 command: 'vscode.open',
                 title: 'Open Module Definition',
@@ -41,7 +41,7 @@ class VerilogNode extends vscode.TreeItem {
             };
             this.contextValue = 'verilogModule';
         } else if (options?.uri) {
-            // Узел файла
+            // File node
             this.resourceUri = options.uri;
             this.command = {
                 command: 'vscode.open',
@@ -50,7 +50,7 @@ class VerilogNode extends vscode.TreeItem {
             };
             this.contextValue = 'verilogFile';
         } else {
-            // Папка
+            // Folder
             this.contextValue = 'verilogFolder';
         }
     }
@@ -174,7 +174,7 @@ class VerilogProjectTreeProvider implements vscode.TreeDataProvider<VerilogNode>
 
 // -------------------- Hierarchy Tree --------------------
 
-// Добавляем location, чтобы по клику открывать файл
+// Add location so click opens the file
 class HierarchyNode extends vscode.TreeItem {
     public readonly children?: HierarchyNode[];
 
@@ -270,7 +270,7 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
         const mods = this.design.modulesByName.get(name) ?? [];
         const instances = mods.flatMap(m => m.instances);
 
-        // Выбираем первую реализацию модуля для навигации
+        // Pick the first module implementation for navigation
         const primaryModule = mods[0];
         const primaryLocation = primaryModule
             ? new vscode.Location(primaryModule.uri, primaryModule.definitionRange)
@@ -296,7 +296,7 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
                 const childLoc = new vscode.Location(t.uri, t.definitionRange);
                 const childNode = this.createNodeForModule(t.name, newVisited);
                 childNode.label = `${inst.instanceName}: ${t.name}`;
-                // добавляем команду на дочерний узел
+                // Add command to child node
                 childNode.command = {
                     command: 'vscode.open',
                     title: 'Open Module Definition',
@@ -337,7 +337,7 @@ class VerilogDefinitionProvider implements vscode.DefinitionProvider {
             return null;
         }
 
-        // Находим слово под курсором (идентификатор)
+        // Find identifier under cursor
         const wordRange = document.getWordRangeAtPosition(position, /[a-zA-Z_]\w*/);
         if (!wordRange) {
             return null;
@@ -356,7 +356,7 @@ class VerilogDefinitionProvider implements vscode.DefinitionProvider {
             const range = m.definitionRange;
             const key = `${m.uri.toString()}:${range.start.line}:${range.start.character}`;
             if (seen.has(key)) {
-                continue; // уже добавляли такое определение
+                continue; // already added this location
             }
             seen.add(key);
             locations.push(new vscode.Location(m.uri, range));
@@ -366,7 +366,7 @@ class VerilogDefinitionProvider implements vscode.DefinitionProvider {
     }
 }
 
-// -------------------- Общий индекс + автообновление --------------------
+// -------------------- Shared index + auto refresh --------------------
 
 export function activate(context: vscode.ExtensionContext) {
     const backend = new TsRegexParserBackend();
@@ -411,7 +411,7 @@ export function activate(context: vscode.ExtensionContext) {
         }, 300);
     };
 
-    // Команды ручного обновления
+    // Manual refresh commands
     const refreshTreeCmd = vscode.commands.registerCommand(
         'vetree-verilog.refreshTree',
         () => scheduleFullRefresh(),
@@ -451,7 +451,7 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            // Если модуль определяется в нескольких файлах – дадим выбрать
+            // If module is defined in multiple files, let the user pick
             let targetModule = modules[0];
             if (modules.length > 1) {
                 const pick = await vscode.window.showQuickPick(
@@ -499,14 +499,14 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(showModulePortsCmd);
 
-    // Автообновление при изменении файлов .v/.sv
+    // Auto refresh on .v/.sv changes
     const watcher = vscode.workspace.createFileSystemWatcher('**/*.{v,sv}');
     watcher.onDidCreate(() => scheduleFullRefresh());
     watcher.onDidChange(() => scheduleFullRefresh());
     watcher.onDidDelete(() => scheduleFullRefresh());
     context.subscriptions.push(watcher);
 
-    // DefinitionProvider для верилогов
+    // DefinitionProvider for Verilog files
     const defProvider = new VerilogDefinitionProvider(() => currentDesign);
     const selector: vscode.DocumentSelector = [
         { scheme: 'file', language: 'verilog' },
@@ -515,10 +515,10 @@ export function activate(context: vscode.ExtensionContext) {
     const defReg = vscode.languages.registerDefinitionProvider(selector, defProvider);
     context.subscriptions.push(defReg);
 
-    // Первичный проход
+    // Initial pass
     scheduleFullRefresh();
 }
 
 export function deactivate() {
-    // ничего особого
+    // no-op
 }

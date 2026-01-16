@@ -27,7 +27,7 @@ export class TsRegexParserBackend implements VerilogParserBackend {
         const modulesByFile = new Map<string, ParsedModule[]>();
 
         for (const m of modules) {
-            // по имени
+            // by name
             let arrByName = modulesByName.get(m.name);
             if (!arrByName) {
                 arrByName = [];
@@ -35,7 +35,7 @@ export class TsRegexParserBackend implements VerilogParserBackend {
             }
             arrByName.push(m);
 
-            // по файлу
+            // by file
             const key = m.uri.toString();
             let arrByFile = modulesByFile.get(key);
             if (!arrByFile) {
@@ -49,30 +49,81 @@ export class TsRegexParserBackend implements VerilogParserBackend {
     }
 }
 
-// --------- helpers: парсер на regex ---------
+// --------- helpers: regex parser ---------
 
 function stripVerilogComments(source: string): string {
-    // Сохраняем длину текста и позиции строк/столбцов.
-    // В комментариях заменяем всё, кроме '\n', на пробелы.
+    // Preserve length and line positions by replacing comment chars with spaces.
+    const out = source.split('');
+    let inLineComment = false;
+    let inBlockComment = false;
+    let inString = false;
 
-    // Многострочные комментарии /* ... */
-    let result = source.replace(/\/\*[\s\S]*?\*\//g, (match) => {
-        return match.replace(/[^\n]/g, ' ');
-    });
+    for (let i = 0; i < out.length; i++) {
+        const ch = out[i];
+        const next = i + 1 < out.length ? out[i + 1] : '';
 
-    // Однострочные комментарии // ...
-    result = result.replace(/\/\/.*$/gm, (match) => {
-        return match.replace(/[^\n]/g, ' ');
-    });
+        if (inLineComment) {
+            if (ch === '\\n') {
+                inLineComment = false;
+            } else {
+                out[i] = ' ';
+            }
+            continue;
+        }
 
-    return result;
+        if (inBlockComment) {
+            if (ch === '*' && next === '/') {
+                out[i] = ' ';
+                out[i + 1] = ' ';
+                i++;
+                inBlockComment = false;
+            } else if (ch !== '\\n') {
+                out[i] = ' ';
+            }
+            continue;
+        }
+
+        if (inString) {
+            if (ch === '\\\\' && next !== '') {
+                i++;
+                continue;
+            }
+            if (ch === '\"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === '\"') {
+            inString = true;
+            continue;
+        }
+
+        if (ch === '/' && next === '/') {
+            out[i] = ' ';
+            out[i + 1] = ' ';
+            i++;
+            inLineComment = true;
+            continue;
+        }
+
+        if (ch === '/' && next === '*') {
+            out[i] = ' ';
+            out[i + 1] = ' ';
+            i++;
+            inBlockComment = true;
+            continue;
+        }
+    }
+
+    return out.join('');
 }
 
 function parseModulesAndInstancesInFile(source: string, uri: vscode.Uri): ParsedModule[] {
     const modules: ParsedModule[] = [];
     const clean = stripVerilogComments(source);
 
-    // Важно: только пробел/таб, без '\n'
+    // Important: only space/tab, no '\n'
     const moduleRegex = /^[ \t]*module\s+([a-zA-Z_]\w*)/gm;
     const endRegex = /\bendmodule\b/gm;
 
@@ -99,10 +150,10 @@ function parseModulesAndInstancesInFile(source: string, uri: vscode.Uri): Parsed
             bodyEnd = moduleMatches[i + 1].start;
         }
 
-        // Порты: берём заголовок module (...) ;
+        // Ports: parse module header
         const ports = parseModulePortsFromHeader(clean, uri, cur.start, cur.bodyStart);
 
-        // Инстансы: ищем в теле модуля
+        // Instances: search inside module body
         const instances = parseInstantiationsInText(clean, uri, cur.bodyStart, bodyEnd);
 
         const defPos = offsetToPosition(clean, cur.start);
@@ -127,9 +178,9 @@ function parseInstantiationsInText(
 ): InstanceRef[] {
     const result: InstanceRef[] = [];
 
-    // Тоже без '\n' в начале строки
+    // Also without '\n' at line start
     const instRegex =
-        /^[ \t]*([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*(?:#\s*\([^;]*\))?\s*\(/gm;
+        /^[ \t]*(?:\(\*[^\\n]*\*\)\s*)*(?:[a-zA-Z_]\w*\s*:\s*)?([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*(?:#\s*\([^;]*\))?\s*\(/gm;
 
     const keywords = new Set([
         'if', 'else', 'begin', 'end', 'case', 'casex', 'casez',
@@ -229,7 +280,7 @@ function parseModulePortsFromHeader(
         return ports;
     }
 
-    // Внутренности скобок: список портов, разделённых запятыми
+    // Inside parens: list of ports separated by commas
     const innerStart = parenStart + 1;
     const innerEnd = parenEnd;
     const headerInner = clean.slice(innerStart, innerEnd);
@@ -245,7 +296,7 @@ function parseModulePortsFromHeader(
             continue;
         }
 
-        // Грубое выделение направления
+        // Rough direction parsing
         let direction: PortInfo['direction'] = 'unknown';
         let rest = trimmed;
         const dirMatch = /^(input|output|inout|ref)\b(.*)$/i.exec(trimmed);
@@ -271,13 +322,13 @@ function parseModulePortsFromHeader(
         const rangeMatch = /(\[[^\]]+\])/.exec(nameSource);
         const rangeText = rangeMatch ? rangeMatch[1] : undefined;
 
-        // Пытаемся найти локальный индекс фрагмента внутри headerInner
+        // Try to find the local index of the fragment inside headerInner
         let localIndex = headerInner.indexOf(partOriginal, searchOffset);
         if (localIndex === -1) {
             localIndex = searchOffset;
         }
 
-        // Глобальный offset: начало inner + localIndex + смещение имени
+        // Global offset: inner start + localIndex + name offset
         const nameOffsetInPart = partOriginal.indexOf(name);
         const globalOffset = innerStart + localIndex + Math.max(nameOffsetInPart, 0);
 
@@ -297,7 +348,7 @@ function parseModulePortsFromHeader(
     return ports;
 }
 
-// простой offset -> position (по строкам)
+// simple offset -> position (by lines)
 function offsetToPosition(text: string, offset: number): vscode.Position {
     let line = 0;
     let lastLineStart = 0;
