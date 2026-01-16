@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import {
     ParsedDesign,
 } from './parser/types';
@@ -426,6 +427,71 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
     }
 }
 
+async function loadDefinesFromFile(): Promise<Set<string>> {
+    const defines = new Set<string>();
+    const config = vscode.workspace.getConfiguration('vetree-verilog');
+    const definesFile = config.get<string>('definesFile');
+    if (!definesFile) {
+        return defines;
+    }
+
+    const uri = resolveDefinesFileUri(definesFile);
+    if (!uri) {
+        console.warn('Defines file path is set, but no workspace folder is open.');
+        return defines;
+    }
+
+    try {
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        const text = Buffer.from(bytes).toString('utf8');
+        parseDefinesFromFilelist(text, defines);
+    } catch (err) {
+        console.warn(`Failed to read defines file: ${uri.fsPath}`, err);
+    }
+
+    return defines;
+}
+
+function resolveDefinesFileUri(definesFile: string): vscode.Uri | null {
+    if (path.isAbsolute(definesFile)) {
+        return vscode.Uri.file(definesFile);
+    }
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+        return null;
+    }
+    return vscode.Uri.joinPath(folders[0].uri, definesFile);
+}
+
+function parseDefinesFromFilelist(text: string, defines: Set<string>): void {
+    const lines = text.split(/\r?\n/);
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('//') || line.startsWith('#')) {
+            continue;
+        }
+
+        const tokens = line.split(/\s+/);
+        for (const token of tokens) {
+            if (token.startsWith('+define+')) {
+                const rest = token.slice('+define+'.length);
+                const parts = rest.split('+');
+                for (const part of parts) {
+                    const name = part.split('=')[0].trim();
+                    if (name) {
+                        defines.add(name);
+                    }
+                }
+            } else if (token.startsWith('-D')) {
+                const name = token.slice(2).split('=')[0].trim();
+                if (name) {
+                    defines.add(name);
+                }
+            }
+        }
+    }
+}
+
 // -------------------- DefinitionProvider --------------------
 
 class VerilogDefinitionProvider implements vscode.DefinitionProvider {
@@ -505,12 +571,14 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
+        const defines = await loadDefinesFromFile();
+
         const files = await vscode.workspace.findFiles(
             '**/*.{v,sv}',
             '**/{.git,node_modules,out,dist,build}/**',
         );
 
-        const design = await backend.parseFiles(files);
+        const design = await backend.parseFiles(files, defines);
         currentDesign = design;
 
         projectTreeProvider.update(files, design);

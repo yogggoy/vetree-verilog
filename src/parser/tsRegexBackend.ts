@@ -9,14 +9,16 @@ import {
 } from './types';
 
 export class TsRegexParserBackend implements VerilogParserBackend {
-    async parseFiles(files: vscode.Uri[]): Promise<ParsedDesign> {
+    async parseFiles(files: vscode.Uri[], defines?: Set<string>): Promise<ParsedDesign> {
         const modules: ParsedModule[] = [];
+        const activeDefines = defines ?? new Set<string>();
 
         for (const uri of files) {
             try {
                 const bytes = await vscode.workspace.fs.readFile(uri);
                 const text = Buffer.from(bytes).toString('utf8');
-                const modsInFile = parseModulesAndInstancesInFile(text, uri);
+                const fileDefines = new Set(activeDefines);
+                const modsInFile = parseModulesAndInstancesInFile(text, uri, fileDefines);
                 modules.push(...modsInFile);
             } catch (err) {
                 console.error(`Failed to read ${uri.fsPath}:`, err);
@@ -140,9 +142,101 @@ function stripVerilogComments(source: string): string {
     return out.join('');
 }
 
-function parseModulesAndInstancesInFile(source: string, uri: vscode.Uri): ParsedModule[] {
+function preprocessVerilog(clean: string, defines: Set<string>): string {
+    const out = clean.split('');
+    const stack: Array<{ parentActive: boolean; thisActive: boolean; branchTaken: boolean }> = [];
+
+    const isActive = () => (stack.length === 0 ? true : stack[stack.length - 1].thisActive);
+
+    const blankLine = (start: number, end: number) => {
+        for (let i = start; i < end; i++) {
+            out[i] = ' ';
+        }
+    };
+
+    let index = 0;
+    while (index < clean.length) {
+        const lineStart = index;
+        let lineEnd = clean.indexOf('\n', index);
+        if (lineEnd === -1) {
+            lineEnd = clean.length;
+        }
+
+        const lineText = clean.slice(lineStart, lineEnd);
+        const directiveMatch = /^\s*`(\w+)(.*)$/.exec(lineText);
+
+        if (directiveMatch) {
+            const directive = directiveMatch[1];
+            const rest = directiveMatch[2].trim();
+
+            if (directive === 'define') {
+                if (isActive()) {
+                    const nameMatch = /^([a-zA-Z_]\w*)/.exec(rest);
+                    if (nameMatch) {
+                        defines.add(nameMatch[1]);
+                    }
+                }
+            } else if (directive === 'undef') {
+                if (isActive()) {
+                    const nameMatch = /^([a-zA-Z_]\w*)/.exec(rest);
+                    if (nameMatch) {
+                        defines.delete(nameMatch[1]);
+                    }
+                }
+            } else if (directive === 'ifdef' || directive === 'ifndef') {
+                const nameMatch = /^([a-zA-Z_]\w*)/.exec(rest);
+                const isDefined = nameMatch ? defines.has(nameMatch[1]) : false;
+                const condition = directive === 'ifdef' ? isDefined : !isDefined;
+                const parentActive = isActive();
+                const thisActive = parentActive && condition;
+                stack.push({ parentActive, thisActive, branchTaken: condition });
+            } else if (directive === 'elsif') {
+                const state = stack[stack.length - 1];
+                if (state) {
+                    if (!state.parentActive || state.branchTaken) {
+                        state.thisActive = false;
+                    } else {
+                        const nameMatch = /^([a-zA-Z_]\w*)/.exec(rest);
+                        const condition = nameMatch ? defines.has(nameMatch[1]) : false;
+                        state.thisActive = condition;
+                        state.branchTaken = condition;
+                    }
+                }
+            } else if (directive === 'else') {
+                const state = stack[stack.length - 1];
+                if (state) {
+                    if (!state.parentActive || state.branchTaken) {
+                        state.thisActive = false;
+                    } else {
+                        state.thisActive = true;
+                        state.branchTaken = true;
+                    }
+                }
+            } else if (directive === 'endif') {
+                if (stack.length > 0) {
+                    stack.pop();
+                }
+            }
+
+            blankLine(lineStart, lineEnd);
+        } else if (!isActive()) {
+            blankLine(lineStart, lineEnd);
+        }
+
+        index = lineEnd + 1;
+    }
+
+    return out.join('');
+}
+
+function parseModulesAndInstancesInFile(
+    source: string,
+    uri: vscode.Uri,
+    defines: Set<string>,
+): ParsedModule[] {
     const modules: ParsedModule[] = [];
-    const clean = stripVerilogComments(source);
+    let clean = stripVerilogComments(source);
+    clean = preprocessVerilog(clean, defines);
 
     // Important: only space/tab, no '\n'
     const moduleRegex = /^[ \t]*module\s+([a-zA-Z_]\w*)/gm;

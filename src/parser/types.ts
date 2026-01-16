@@ -30,5 +30,5 @@ export interface ParsedDesign {
 }
 
 export interface VerilogParserBackend {
-    parseFiles(files: vscode.Uri[]): Promise<ParsedDesign>;
+    parseFiles(files: vscode.Uri[], defines?: Set<string>): Promise<ParsedDesign>;
 }

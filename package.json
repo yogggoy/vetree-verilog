@@ -87,6 +87,16 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "title": "Vetree Verilog",
+      "properties": {
+        "vetree-verilog.definesFile": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a .f file that provides +define+ flags for the Verilog parser."
+        }
+      }
     }
   },
   "scripts": {
