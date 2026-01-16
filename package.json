@@ -49,6 +49,14 @@
       {
         "command": "vetree-verilog.goToDefinition",
         "title": "Verilog: Go to Module Definition"
+      },
+      {
+        "command": "vetree-verilog.revealInHierarchy",
+        "title": "Verilog: Reveal in Hierarchy"
+      },
+      {
+        "command": "vetree-verilog.revealInProjectTree",
+        "title": "Verilog: Reveal in Project Tree"
       }
     ],
     "menus": {
@@ -59,12 +67,22 @@
           "group": "navigation"
         },
         {
+          "command": "vetree-verilog.revealInHierarchy",
+          "when": "view == vetreeVerilogView && viewItem == verilogModule",
+          "group": "navigation"
+        },
+        {
           "command": "vetree-verilog.showModulePorts",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
           "group": "navigation"
         },
         {
           "command": "vetree-verilog.goToDefinition",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.revealInProjectTree",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
           "group": "navigation"
         }
