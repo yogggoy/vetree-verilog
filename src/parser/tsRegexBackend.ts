@@ -180,7 +180,7 @@ function parseInstantiationsInText(
 
     // Also without '\n' at line start
     const instRegex =
-        /^[ \t]*(?:\(\*[^\\n]*\*\)\s*)*(?:[a-zA-Z_]\w*\s*:\s*)?([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*(?:#\s*\([^;]*\))?\s*\(/gm;
+        /^[ \t]*(?:\(\*[\s\S]*?\*\)\s*)*(?:[a-zA-Z_]\w*\s*:\s*)?([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*(?:#\s*\([^;]*\))?\s*\(/gm;
 
     const keywords = new Set([
         'if', 'else', 'begin', 'end', 'case', 'casex', 'casez',
@@ -350,16 +350,44 @@ function parseModulePortsFromHeader(
 
 // simple offset -> position (by lines)
 function offsetToPosition(text: string, offset: number): vscode.Position {
-    let line = 0;
-    let lastLineStart = 0;
+    const lineStarts = getLineStarts(text);
+    let low = 0;
+    let high = lineStarts.length - 1;
 
-    for (let i = 0; i < offset && i < text.length; i++) {
-        if (text.charCodeAt(i) === 10 /* \n */) {
-            line++;
-            lastLineStart = i + 1;
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const start = lineStarts[mid];
+        if (start === offset) {
+            return new vscode.Position(mid, 0);
+        }
+        if (start < offset) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
         }
     }
 
-    const character = offset - lastLineStart;
+    const line = Math.max(0, low - 1);
+    const character = offset - lineStarts[line];
     return new vscode.Position(line, character);
+}
+
+let cachedText: string | null = null;
+let cachedLineStarts: number[] = [];
+
+function getLineStarts(text: string): number[] {
+    if (text === cachedText) {
+        return cachedLineStarts;
+    }
+
+    const starts = [0];
+    for (let i = 0; i < text.length; i++) {
+        if (text.charCodeAt(i) === 10 /* \n */) {
+            starts.push(i + 1);
+        }
+    }
+
+    cachedText = text;
+    cachedLineStarts = starts;
+    return starts;
 }
