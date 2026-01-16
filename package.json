@@ -45,6 +45,10 @@
       {
         "command": "vetree-verilog.showModulePorts",
         "title": "Verilog: Show Module Ports"
+      },
+      {
+        "command": "vetree-verilog.goToDefinition",
+        "title": "Verilog: Go to Module Definition"
       }
     ],
     "menus": {
@@ -56,6 +60,11 @@
         },
         {
           "command": "vetree-verilog.showModulePorts",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.goToDefinition",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
           "group": "navigation"
         }

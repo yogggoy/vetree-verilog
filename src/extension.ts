@@ -177,22 +177,31 @@ class VerilogProjectTreeProvider implements vscode.TreeDataProvider<VerilogNode>
 // Add location so click opens the file
 class HierarchyNode extends vscode.TreeItem {
     public readonly children?: HierarchyNode[];
+    public readonly definitionLocation?: vscode.Location;
+    public readonly instanceLocation?: vscode.Location;
 
     constructor(
         public moduleName: string,
         label: string,
         collapsibleState: vscode.TreeItemCollapsibleState,
-        options?: { children?: HierarchyNode[]; location?: vscode.Location },
+        options?: {
+            children?: HierarchyNode[];
+            definitionLocation?: vscode.Location;
+            instanceLocation?: vscode.Location;
+        },
     ) {
         super(label, collapsibleState);
         this.children = options?.children;
+        this.definitionLocation = options?.definitionLocation;
+        this.instanceLocation = options?.instanceLocation;
         this.contextValue = 'verilogModuleHierarchy';
 
-        if (options?.location) {
+        const target = this.instanceLocation ?? this.definitionLocation;
+        if (target) {
             this.command = {
                 command: 'vscode.open',
-                title: 'Open Module Definition',
-                arguments: [options.location.uri, { selection: options.location.range }],
+                title: 'Open Module',
+                arguments: [target.uri, { selection: target.range }],
             };
         }
     }
@@ -251,7 +260,12 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
         this.roots = Array.from(rootSet).sort();
     }
 
-    private createNodeForModule(name: string, visited: Set<string>): HierarchyNode {
+    private createNodeForModule(
+        name: string,
+        visited: Set<string>,
+        instanceLocation?: vscode.Location,
+        definitionLocation?: vscode.Location,
+    ): HierarchyNode {
         if (!this.design) {
             return new HierarchyNode(name, name, vscode.TreeItemCollapsibleState.None);
         }
@@ -261,6 +275,7 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
                 name,
                 `${name} (cycle)`,
                 vscode.TreeItemCollapsibleState.None,
+                { instanceLocation },
             );
         }
 
@@ -272,9 +287,9 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
 
         // Pick the first module implementation for navigation
         const primaryModule = mods[0];
-        const primaryLocation = primaryModule
+        const primaryLocation = definitionLocation ?? (primaryModule
             ? new vscode.Location(primaryModule.uri, primaryModule.definitionRange)
-            : undefined;
+            : undefined);
 
         const children: HierarchyNode[] = [];
 
@@ -286,7 +301,7 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
                         inst.moduleName,
                         `${inst.instanceName}: ${inst.moduleName} (external)`,
                         vscode.TreeItemCollapsibleState.None,
-                        { location: inst.location },
+                        { instanceLocation: inst.location },
                     ),
                 );
                 continue;
@@ -294,14 +309,13 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
 
             for (const t of targets) {
                 const childLoc = new vscode.Location(t.uri, t.definitionRange);
-                const childNode = this.createNodeForModule(t.name, newVisited);
+                const childNode = this.createNodeForModule(
+                    t.name,
+                    newVisited,
+                    inst.location,
+                    childLoc,
+                );
                 childNode.label = `${inst.instanceName}: ${t.name}`;
-                // Add command to child node
-                childNode.command = {
-                    command: 'vscode.open',
-                    title: 'Open Module Definition',
-                    arguments: [childLoc.uri, { selection: childLoc.range }],
-                };
                 children.push(childNode);
             }
         }
@@ -316,7 +330,8 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
             state,
             {
                 children,
-                location: primaryLocation,
+                definitionLocation: primaryLocation,
+                instanceLocation,
             },
         );
     }
@@ -498,6 +513,23 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(showModulePortsCmd);
+
+    const goToDefinitionCmd = vscode.commands.registerCommand(
+        'vetree-verilog.goToDefinition',
+        async (item: HierarchyNode) => {
+            const loc = item?.definitionLocation;
+            if (!loc) {
+                vscode.window.showInformationMessage('Module definition not found.');
+                return;
+            }
+            const doc = await vscode.workspace.openTextDocument(loc.uri);
+            const editor = await vscode.window.showTextDocument(doc);
+            editor.selection = new vscode.Selection(loc.range.start, loc.range.start);
+            editor.revealRange(loc.range, vscode.TextEditorRevealType.InCenter);
+        },
+    );
+
+    context.subscriptions.push(goToDefinitionCmd);
 
     // Auto refresh on .v/.sv changes
     const watcher = vscode.workspace.createFileSystemWatcher('**/*.{v,sv}');
