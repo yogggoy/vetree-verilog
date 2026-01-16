@@ -5,6 +5,7 @@ import {
     ParsedDesign,
     ParsedModule,
     VerilogParserBackend,
+    PortInfo,
 } from './types';
 
 export class TsRegexParserBackend implements VerilogParserBackend {
@@ -98,7 +99,10 @@ function parseModulesAndInstancesInFile(source: string, uri: vscode.Uri): Parsed
             bodyEnd = moduleMatches[i + 1].start;
         }
 
-        // парсим инстансы в диапазоне [bodyStart, bodyEnd)
+        // Порты: берём заголовок module (...) ;
+        const ports = parseModulePortsFromHeader(clean, uri, cur.start, cur.bodyStart);
+
+        // Инстансы: ищем в теле модуля
         const instances = parseInstantiationsInText(clean, uri, cur.bodyStart, bodyEnd);
 
         const defPos = offsetToPosition(clean, cur.start);
@@ -109,9 +113,9 @@ function parseModulesAndInstancesInFile(source: string, uri: vscode.Uri): Parsed
             uri,
             definitionRange: defRange,
             instances,
+            ports,
         });
     }
-
     return modules;
 }
 
@@ -167,6 +171,102 @@ function parseInstantiationsInText(
     }
 
     return result;
+}
+
+function parseModulePortsFromHeader(
+    clean: string,
+    uri: vscode.Uri,
+    moduleStart: number,
+    bodyStart: number,
+): PortInfo[] {
+    const ports: PortInfo[] = [];
+
+    // Ищем первую '(' после 'module <name>'
+    const parenStart = clean.indexOf('(', bodyStart);
+    if (parenStart === -1) {
+        return ports;
+    }
+
+    // Находим соответствующую ')', учитывая вложенные скобки
+    let depth = 0;
+    let parenEnd = -1;
+    for (let i = parenStart; i < clean.length; i++) {
+        const ch = clean[i];
+        if (ch === '(') {
+            depth++;
+        } else if (ch === ')') {
+            depth--;
+            if (depth === 0) {
+                parenEnd = i;
+                break;
+            }
+        }
+    }
+    if (parenEnd === -1) {
+        return ports;
+    }
+
+    // Внутренности скобок: список портов, разделённых запятыми
+    const innerStart = parenStart + 1;
+    const innerEnd = parenEnd;
+    const headerInner = clean.slice(innerStart, innerEnd);
+
+    let searchOffset = 0;
+    const parts = headerInner.split(',');
+
+    for (const rawPart of parts) {
+        const partOriginal = rawPart;
+        const trimmed = rawPart.trim();
+        if (!trimmed) {
+            searchOffset += partOriginal.length + 1;
+            continue;
+        }
+
+        // Грубое выделение направления
+        let direction: PortInfo['direction'] = 'unknown';
+        let rest = trimmed;
+        const dirMatch = /^(input|output|inout|ref)\b(.*)$/i.exec(trimmed);
+        if (dirMatch) {
+            direction = dirMatch[1].toLowerCase() as PortInfo['direction'];
+            rest = dirMatch[2].trim();
+        }
+
+        // Имя порта — последний идентификатор
+        const nameMatch = /([a-zA-Z_]\w*)\s*$/.exec(rest || trimmed);
+        if (!nameMatch) {
+            searchOffset += partOriginal.length + 1;
+            continue;
+        }
+        const name = nameMatch[1];
+
+        // Диапазон, если есть
+        const rangeMatch = /(\[[^\]]+\])/.exec(rest);
+        const rangeText = rangeMatch ? rangeMatch[1] : undefined;
+
+        // Пытаемся найти локальный индекс фрагмента внутри headerInner
+        let localIndex = headerInner.indexOf(partOriginal, searchOffset);
+        if (localIndex === -1) {
+            localIndex = searchOffset;
+        }
+
+        // Глобальный offset: начало inner + localIndex + смещение имени
+        const nameOffsetInPart = partOriginal.indexOf(name);
+        const globalOffset = innerStart + localIndex + Math.max(nameOffsetInPart, 0);
+
+        const pos = offsetToPosition(clean, globalOffset);
+        const loc = new vscode.Location(uri, pos);
+
+        ports.push({
+            direction,
+            name,
+            rangeText,
+            location: loc,
+        });
+
+        searchOffset = localIndex + partOriginal.length + 1;
+    }
+
+    return ports;
 }
 
 // простой offset -> position (по строкам)

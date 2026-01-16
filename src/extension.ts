@@ -16,18 +16,21 @@ interface TempNode {
 
 class VerilogNode extends vscode.TreeItem {
     public readonly children?: VerilogNode[];
+    public readonly moduleName?: string;
 
     constructor(
         label: string,
         collapsibleState: vscode.TreeItemCollapsibleState,
         options?: {
             children?: VerilogNode[];
-            uri?: vscode.Uri;              // для файлов
-            location?: vscode.Location;    // для модулей
+            uri?: vscode.Uri;              // файл
+            location?: vscode.Location;    // модуль
+            moduleName?: string;           // имя модуля
         },
     ) {
         super(label, collapsibleState);
         this.children = options?.children;
+        this.moduleName = options?.moduleName;
 
         if (options?.location) {
             // Узел модуля
@@ -138,6 +141,7 @@ class VerilogProjectTreeProvider implements vscode.TreeDataProvider<VerilogNode>
                     vscode.TreeItemCollapsibleState.None,
                     {
                         location: new vscode.Location(m.uri, m.definitionRange),
+                        moduleName: m.name,
                     },
                 ),
             );
@@ -418,6 +422,82 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(refreshTreeCmd, refreshHierarchyCmd);
+
+    const showModulePortsCmd = vscode.commands.registerCommand(
+        'vetree-verilog.showModulePorts',
+        async (item: VerilogNode | HierarchyNode) => {
+            const design = currentDesign;
+            if (!design) {
+                vscode.window.showInformationMessage('Verilog design is not indexed yet.');
+                return;
+            }
+
+            let moduleName: string | undefined;
+
+            if (item instanceof HierarchyNode) {
+                moduleName = item.moduleName;
+            } else if (item instanceof VerilogNode && item.contextValue === 'verilogModule') {
+                moduleName = item.moduleName;
+            }
+
+            if (!moduleName) {
+                vscode.window.showInformationMessage('No module associated with this item.');
+                return;
+            }
+
+            const modules = design.modulesByName.get(moduleName);
+            if (!modules || modules.length === 0) {
+                vscode.window.showInformationMessage(`Module "${moduleName}" not found in index.`);
+                return;
+            }
+
+            // Если модуль определяется в нескольких файлах – дадим выбрать
+            let targetModule = modules[0];
+            if (modules.length > 1) {
+                const pick = await vscode.window.showQuickPick(
+                    modules.map(m => ({
+                        label: moduleName!,
+                        description: vscode.workspace.asRelativePath(m.uri),
+                        mod: m,
+                    })),
+                    { title: `Select module "${moduleName}" variant` },
+                );
+                if (!pick) {
+                    return;
+                }
+                targetModule = pick.mod;
+            }
+
+            const ports = targetModule.ports;
+            if (!ports || ports.length === 0) {
+                vscode.window.showInformationMessage(`Module "${moduleName}" has no parsed ports.`);
+                return;
+            }
+
+            const items = ports.map(p => ({
+                label: `${p.direction.padEnd(7)} ${p.name}`,
+                description: p.rangeText ?? '',
+                port: p,
+            }));
+
+            const selected = await vscode.window.showQuickPick(items, {
+                title: `Ports of module "${moduleName}"`,
+                placeHolder: 'Select port to jump to its definition',
+            });
+
+            if (!selected) {
+                return;
+            }
+
+            const loc = selected.port.location;
+            const doc = await vscode.workspace.openTextDocument(loc.uri);
+            const editor = await vscode.window.showTextDocument(doc);
+            editor.selection = new vscode.Selection(loc.range.start, loc.range.start);
+            editor.revealRange(loc.range, vscode.TextEditorRevealType.InCenter);
+        },
+    );
+
+    context.subscriptions.push(showModulePortsCmd);
 
     // Автообновление при изменении файлов .v/.sv
     const watcher = vscode.workspace.createFileSystemWatcher('**/*.{v,sv}');

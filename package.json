@@ -10,8 +10,6 @@
     "Other"
   ],
   "main": "./out/extension.js",
-
-
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -43,8 +41,26 @@
       {
         "command": "vetree-verilog.refreshHierarchy",
         "title": "Verilog: Refresh Hierarchy"
+      },
+      {
+        "command": "vetree-verilog.showModulePorts",
+        "title": "Verilog: Show Module Ports"
       }
-    ]
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "vetree-verilog.showModulePorts",
+          "when": "view == vetreeVerilogView && viewItem == verilogModule",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.showModulePorts",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

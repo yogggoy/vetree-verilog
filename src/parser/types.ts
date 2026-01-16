@@ -1,10 +1,18 @@
-// src/parser/types.ts
 import * as vscode from 'vscode';
+
+export type PortDirection = 'input' | 'output' | 'inout' | 'ref' | 'unknown';
+
+export interface PortInfo {
+    direction: PortDirection;
+    name: string;
+    rangeText?: string;       // например "[7:0]" или "[ADDR_W-1:0]"
+    location: vscode.Location;
+}
 
 export interface InstanceRef {
     moduleName: string;
     instanceName: string;
-    location: vscode.Location; // на будущее для перехода к инстансу
+    location: vscode.Location;
 }
 
 export interface ParsedModule {
@@ -12,6 +20,7 @@ export interface ParsedModule {
     uri: vscode.Uri;
     definitionRange: vscode.Range;
     instances: InstanceRef[];
+    ports: PortInfo[];
 }
 
 export interface ParsedDesign {
