@@ -52,10 +52,11 @@ export class TsRegexParserBackend implements VerilogParserBackend {
 // --------- helpers: regex parser ---------
 
 function stripVerilogComments(source: string): string {
-    // Preserve length and line positions by replacing comment chars with spaces.
+    // Preserve length and line positions by replacing comment/attribute chars with spaces.
     const out = source.split('');
     let inLineComment = false;
     let inBlockComment = false;
+    let inAttribute = false;
     let inString = false;
 
     for (let i = 0; i < out.length; i++) {
@@ -63,7 +64,7 @@ function stripVerilogComments(source: string): string {
         const next = i + 1 < out.length ? out[i + 1] : '';
 
         if (inLineComment) {
-            if (ch === '\\n') {
+            if (ch === '\n') {
                 inLineComment = false;
             } else {
                 out[i] = ' ';
@@ -77,7 +78,19 @@ function stripVerilogComments(source: string): string {
                 out[i + 1] = ' ';
                 i++;
                 inBlockComment = false;
-            } else if (ch !== '\\n') {
+            } else if (ch !== '\n') {
+                out[i] = ' ';
+            }
+            continue;
+        }
+
+        if (inAttribute) {
+            if (ch === '*' && next === ')') {
+                out[i] = ' ';
+                out[i + 1] = ' ';
+                i++;
+                inAttribute = false;
+            } else if (ch !== '\n') {
                 out[i] = ' ';
             }
             continue;
@@ -112,6 +125,14 @@ function stripVerilogComments(source: string): string {
             out[i + 1] = ' ';
             i++;
             inBlockComment = true;
+            continue;
+        }
+
+        if (ch === '(' && next === '*') {
+            out[i] = ' ';
+            out[i + 1] = ' ';
+            i++;
+            inAttribute = true;
             continue;
         }
     }
@@ -180,7 +201,7 @@ function parseInstantiationsInText(
 
     // Also without '\n' at line start
     const instRegex =
-        /^[ \t]*(?:\(\*[\s\S]*?\*\)\s*)*(?:[a-zA-Z_]\w*\s*:\s*)?([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*(?:#\s*\([^;]*\))?\s*\(/gm;
+        /^[ \t]*(?:[a-zA-Z_]\w*\s*:\s*)?([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*(?:#\s*\([^;]*\))?\s*\(/gm;
 
     const keywords = new Set([
         'if', 'else', 'begin', 'end', 'case', 'casex', 'casez',
