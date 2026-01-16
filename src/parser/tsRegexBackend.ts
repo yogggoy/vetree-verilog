@@ -173,6 +173,22 @@ function parseInstantiationsInText(
     return result;
 }
 
+function findMatchingParen(text: string, openIndex: number, maxIndex: number): number {
+    let depth = 0;
+    for (let i = openIndex; i <= maxIndex && i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '(') {
+            depth++;
+        } else if (ch === ')') {
+            depth--;
+            if (depth === 0) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
 function parseModulePortsFromHeader(
     clean: string,
     uri: vscode.Uri,
@@ -181,28 +197,35 @@ function parseModulePortsFromHeader(
 ): PortInfo[] {
     const ports: PortInfo[] = [];
 
-    // Ищем первую '(' после 'module <name>'
-    const parenStart = clean.indexOf('(', bodyStart);
-    if (parenStart === -1) {
+    // Find end of header to avoid matching body parens.
+    const headerEnd = clean.indexOf(';', bodyStart);
+    if (headerEnd === -1) {
         return ports;
     }
 
-    // Находим соответствующую ')', учитывая вложенные скобки
-    let depth = 0;
-    let parenEnd = -1;
-    for (let i = parenStart; i < clean.length; i++) {
-        const ch = clean[i];
-        if (ch === '(') {
-            depth++;
-        } else if (ch === ')') {
-            depth--;
-            if (depth === 0) {
-                parenEnd = i;
-                break;
+    // Skip optional parameter list: module name #( ... ) ( ... );
+    let scanIndex = bodyStart;
+    while (scanIndex < headerEnd && /\s/.test(clean[scanIndex])) {
+        scanIndex++;
+    }
+    if (scanIndex < headerEnd && clean[scanIndex] === '#') {
+        const paramOpen = clean.indexOf('(', scanIndex);
+        if (paramOpen !== -1 && paramOpen < headerEnd) {
+            const paramClose = findMatchingParen(clean, paramOpen, headerEnd);
+            if (paramClose === -1) {
+                return ports;
             }
+            scanIndex = paramClose + 1;
         }
     }
-    if (parenEnd === -1) {
+
+    const parenStart = clean.indexOf('(', scanIndex);
+    if (parenStart === -1 || parenStart >= headerEnd) {
+        return ports;
+    }
+
+    const parenEnd = findMatchingParen(clean, parenStart, headerEnd);
+    if (parenEnd === -1 || parenEnd > headerEnd) {
         return ports;
     }
 
@@ -231,16 +254,21 @@ function parseModulePortsFromHeader(
             rest = dirMatch[2].trim();
         }
 
-        // Имя порта — последний идентификатор
-        const nameMatch = /([a-zA-Z_]\w*)\s*$/.exec(rest || trimmed);
+        // Port name is the last identifier before any assignment.
+        let nameSource = rest || trimmed;
+        const eqIndex = nameSource.indexOf('=');
+        if (eqIndex !== -1) {
+            nameSource = nameSource.slice(0, eqIndex).trimEnd();
+        }
+        const nameMatch = /([a-zA-Z_]\w*)\s*$/.exec(nameSource);
         if (!nameMatch) {
             searchOffset += partOriginal.length + 1;
             continue;
         }
         const name = nameMatch[1];
 
-        // Диапазон, если есть
-        const rangeMatch = /(\[[^\]]+\])/.exec(rest);
+        // Range, if any, from the decl (ignore default assignment).
+        const rangeMatch = /(\[[^\]]+\])/.exec(nameSource);
         const rangeText = rangeMatch ? rangeMatch[1] : undefined;
 
         // Пытаемся найти локальный индекс фрагмента внутри headerInner
