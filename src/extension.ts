@@ -556,6 +556,10 @@ class DirectConnectionsProvider implements vscode.TreeDataProvider<ConnectionNod
         return element;
     }
 
+    getParent(_element: ConnectionNode): vscode.ProviderResult<ConnectionNode> {
+        return undefined;
+    }
+
     getChildren(): Thenable<ConnectionNode[]> {
         return Promise.resolve(this.data);
     }
