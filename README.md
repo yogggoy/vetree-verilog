@@ -50,6 +50,8 @@ You will see a "Verilog" activity bar container with:
 - `vetree: Open Endpoint A`
 - `vetree: Open Endpoint B`
 - `vetree: Open Both Endpoints`
+- `vetree: Search Project Tree`
+- `vetree: Search Hierarchy`
 - `vetree: Set Project Tree Filter`
 - `vetree: Clear Project Tree Filter`
 - `vetree: Set Hierarchy Filter`

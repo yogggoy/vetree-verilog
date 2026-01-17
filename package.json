@@ -125,10 +125,30 @@
         "command": "vetree-verilog.clearProjectTreeFilter",
         "title": "vetree: Clear Project Tree Filter",
         "icon": "$(close)"
+      },
+      {
+        "command": "vetree-verilog.searchProjectTree",
+        "title": "vetree: Search Project Tree",
+        "icon": "$(search)"
+      },
+      {
+        "command": "vetree-verilog.searchHierarchy",
+        "title": "vetree: Search Hierarchy",
+        "icon": "$(search)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "vetree-verilog.searchProjectTree",
+          "when": "view == vetreeVerilogView",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.searchHierarchy",
+          "when": "view == vetreeVerilogHierarchyView",
+          "group": "navigation"
+        },
         {
           "command": "vetree-verilog.setProjectTreeFilter",
           "when": "view == vetreeVerilogView && config.vetree-verilog.projectTreeFilter == ''",

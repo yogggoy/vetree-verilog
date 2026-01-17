@@ -237,6 +237,23 @@ class VerilogProjectTreeProvider implements vscode.TreeDataProvider<VerilogNode>
         return this.findNode((node) => node.uri?.toString() === uri.toString());
     }
 
+    findFirstMatch(query: string): VerilogNode | undefined {
+        const text = query.trim().toLowerCase();
+        if (!text) {
+            return undefined;
+        }
+        return this.findNode((node) => {
+            const label = typeof node.label === 'string' ? node.label : node.label?.toString() ?? '';
+            const name = node.moduleName ?? '';
+            const pathText = node.uri?.fsPath ?? '';
+            return (
+                label.toLowerCase().includes(text) ||
+                name.toLowerCase().includes(text) ||
+                pathText.toLowerCase().includes(text)
+            );
+        });
+    }
+
     private findNode(
         predicate: (node: VerilogNode) => boolean,
         nodes: VerilogNode[] = this.data,
@@ -574,6 +591,29 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
         const visit = (nodes: HierarchyNode[]): HierarchyNode | undefined => {
             for (const node of nodes) {
                 if (node.moduleName === name) {
+                    return node;
+                }
+                const children = node.children ?? [];
+                const found = visit(children);
+                if (found) {
+                    return found;
+                }
+            }
+            return undefined;
+        };
+        return visit(this.rootNodes);
+    }
+
+    findFirstMatch(query: string): HierarchyNode | undefined {
+        const text = query.trim().toLowerCase();
+        if (!text) {
+            return undefined;
+        }
+        const visit = (nodes: HierarchyNode[]): HierarchyNode | undefined => {
+            for (const node of nodes) {
+                const matchesModule = node.moduleName.toLowerCase().includes(text);
+                const matchesInstance = node.instanceName?.toLowerCase().includes(text) ?? false;
+                if (matchesModule || matchesInstance) {
                     return node;
                 }
                 const children = node.children ?? [];
@@ -1543,6 +1583,46 @@ export function activate(context: vscode.ExtensionContext) {
         },
     );
     context.subscriptions.push(clearProjectTreeFilterCmd);
+
+    const searchProjectTreeCmd = vscode.commands.registerCommand(
+        'vetree-verilog.searchProjectTree',
+        async () => {
+            const query = await vscode.window.showInputBox({
+                title: 'Search project tree',
+                prompt: 'Type a file path or module name',
+            });
+            if (!query) {
+                return;
+            }
+            const target = projectTreeProvider.findFirstMatch(query);
+            if (!target) {
+                vscode.window.showInformationMessage('No match found in project tree.');
+                return;
+            }
+            await projectTreeView.reveal(target, { select: true, focus: true, expand: true });
+        },
+    );
+    context.subscriptions.push(searchProjectTreeCmd);
+
+    const searchHierarchyCmd = vscode.commands.registerCommand(
+        'vetree-verilog.searchHierarchy',
+        async () => {
+            const query = await vscode.window.showInputBox({
+                title: 'Search hierarchy',
+                prompt: 'Type a module or instance name',
+            });
+            if (!query) {
+                return;
+            }
+            const target = hierarchyProvider.findFirstMatch(query);
+            if (!target) {
+                vscode.window.showInformationMessage('No match found in hierarchy.');
+                return;
+            }
+            await hierarchyTreeView.reveal(target, { select: true, focus: true, expand: true });
+        },
+    );
+    context.subscriptions.push(searchHierarchyCmd);
 
     const goToDefinitionCmd = vscode.commands.registerCommand(
         'vetree-verilog.goToDefinition',
