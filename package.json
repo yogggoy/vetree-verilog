@@ -25,11 +25,13 @@
         {
           "id": "vetreeVerilogView",
           "name": "Verilog Project Tree",
-          "icon": "resources/veetree.svg"
+          "icon": "resources/veetree.svg",
+          "contextualTitle": "Verilog Project Tree (Filter: ${vetree-verilog.projectTreeFilter})"
         },
         {
           "id": "vetreeVerilogHierarchyView",
-          "name": "Verilog Hierarchy"
+          "name": "Verilog Hierarchy",
+          "contextualTitle": "Verilog Hierarchy (Filter: ${vetree-verilog.hierarchyFilter})"
         },
         {
           "id": "vetreeVerilogConnectionsView",
@@ -93,9 +95,71 @@
       {
         "command": "vetree-verilog.openDirectConnectionBoth",
         "title": "vetree: Open Both Endpoints"
+      },
+      {
+        "command": "vetree-verilog.setHierarchyFilter",
+        "title": "vetree: Set Hierarchy Filter",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "vetree-verilog.setHierarchyFilterActive",
+        "title": "vetree: Set Hierarchy Filter",
+        "icon": "$(filter-filled)"
+      },
+      {
+        "command": "vetree-verilog.clearHierarchyFilter",
+        "title": "vetree: Clear Hierarchy Filter",
+        "icon": "$(close)"
+      },
+      {
+        "command": "vetree-verilog.setProjectTreeFilter",
+        "title": "vetree: Set Project Tree Filter",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "vetree-verilog.setProjectTreeFilterActive",
+        "title": "vetree: Set Project Tree Filter",
+        "icon": "$(filter-filled)"
+      },
+      {
+        "command": "vetree-verilog.clearProjectTreeFilter",
+        "title": "vetree: Clear Project Tree Filter",
+        "icon": "$(close)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "vetree-verilog.setProjectTreeFilter",
+          "when": "view == vetreeVerilogView && config.vetree-verilog.projectTreeFilter == ''",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.setProjectTreeFilterActive",
+          "when": "view == vetreeVerilogView && config.vetree-verilog.projectTreeFilter != ''",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.clearProjectTreeFilter",
+          "when": "view == vetreeVerilogView && config.vetree-verilog.projectTreeFilter != ''",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.setHierarchyFilter",
+          "when": "view == vetreeVerilogHierarchyView && config.vetree-verilog.hierarchyFilter == ''",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.setHierarchyFilterActive",
+          "when": "view == vetreeVerilogHierarchyView && config.vetree-verilog.hierarchyFilter != ''",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.clearHierarchyFilter",
+          "when": "view == vetreeVerilogHierarchyView && config.vetree-verilog.hierarchyFilter != ''",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "vetree-verilog.showModulePorts",
@@ -237,6 +301,16 @@
           "type": "string",
           "default": "",
           "description": "Limit hierarchy roots to this top module name."
+        },
+        "vetree-verilog.hierarchyFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Hierarchy filter string."
+        },
+        "vetree-verilog.projectTreeFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Project tree filter string."
         }
       }
     }

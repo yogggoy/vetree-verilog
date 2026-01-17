@@ -18,6 +18,7 @@ This extension provides a quick, visual map of the project and navigation helper
 - Project tree view of folders, files, and modules.
 - Module ports shown under each module node.
 - Hierarchy view with module instances and navigation to instantiation sites.
+- Project tree and hierarchy filters for large designs.
 - Go to definition (F12) for module names.
 - QuickPick list of module ports with jump to declaration.
 - Auto refresh on file changes.
@@ -46,6 +47,13 @@ You will see a "Verilog" activity bar container with:
 - `vetree: Select as Endpoint A`
 - `vetree: Select as Endpoint B`
 - `vetree: Show Direct Connections`
+- `vetree: Open Endpoint A`
+- `vetree: Open Endpoint B`
+- `vetree: Open Both Endpoints`
+- `vetree: Set Project Tree Filter`
+- `vetree: Clear Project Tree Filter`
+- `vetree: Set Hierarchy Filter`
+- `vetree: Clear Hierarchy Filter`
 
 ## Settings
 
@@ -57,6 +65,8 @@ You will see a "Verilog" activity bar container with:
 - `vetree-verilog.skipHierarchyBuild`: Skip hierarchy building (debugging).
 - `vetree-verilog.hierarchyResolve`: How to resolve duplicate module names (`all` or `first`).
 - `vetree-verilog.hierarchyTopModule`: Restrict hierarchy roots to a specific top module name.
+- `vetree-verilog.hierarchyFilter`: Filter string for the hierarchy view.
+- `vetree-verilog.projectTreeFilter`: Filter string for the project tree view.
 
 ## How to use
 
@@ -76,6 +86,7 @@ If a project uses a filelist, set `vetree-verilog.definesFile` so the extension 
 - You can set the top module from the tree context menu and clear it with `vetree: Clear Top Module`.
 - `include` is supported as a lightweight define pass; included files are not merged into the current file.
 - When `definesFile` is set and resolves to files, only those files are scanned.
+- Use the filter icons in the view title bars to limit results by substring.
 - Direct connections are based on named port bindings within the same parent module.
 - Direct connection results appear in the "Direct Connections" view.
 
@@ -83,7 +94,7 @@ If a project uses a filelist, set `vetree-verilog.definesFile` so the extension 
 
 - The parser is a lightweight TypeScript implementation, not a full Verilog compiler.
 - Complex macros, generate blocks, or heavy conditional compilation can reduce accuracy.
-- 
+
 ## Example `.f` file
 
 ```text
