@@ -81,6 +81,18 @@
       {
         "command": "vetree-verilog.showDirectConnections",
         "title": "vetree: Show Direct Connections"
+      },
+      {
+        "command": "vetree-verilog.openDirectConnectionA",
+        "title": "vetree: Open Endpoint A"
+      },
+      {
+        "command": "vetree-verilog.openDirectConnectionB",
+        "title": "vetree: Open Endpoint B"
+      },
+      {
+        "command": "vetree-verilog.openDirectConnectionBoth",
+        "title": "vetree: Open Both Endpoints"
       }
     ],
     "menus": {
@@ -161,6 +173,21 @@
           "command": "vetree-verilog.showDirectConnections",
           "when": "view == vetreeVerilogHierarchyView",
           "group": "analysis@3"
+        },
+        {
+          "command": "vetree-verilog.openDirectConnectionA",
+          "when": "view == vetreeVerilogConnectionsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vetree-verilog.openDirectConnectionB",
+          "when": "view == vetreeVerilogConnectionsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vetree-verilog.openDirectConnectionBoth",
+          "when": "view == vetreeVerilogConnectionsView",
+          "group": "navigation@1"
         }
       ]
     },

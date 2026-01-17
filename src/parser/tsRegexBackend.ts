@@ -1,5 +1,6 @@
 // src/parser/tsRegexBackend.ts
 import * as vscode from 'vscode';
+import * as path from 'path';
 import {
     InstanceRef,
     ParsedDesign,
@@ -13,12 +14,17 @@ export class TsRegexParserBackend implements VerilogParserBackend {
     async parseFiles(
         files: vscode.Uri[],
         defines?: Set<string>,
-        options?: { enablePreprocess?: boolean; logDebug?: (message: string) => void },
+        options?: {
+            enablePreprocess?: boolean;
+            logDebug?: (message: string) => void;
+            includeDirs?: vscode.Uri[];
+        },
     ): Promise<ParsedDesign> {
         const modules: ParsedModule[] = [];
         const activeDefines = defines ?? new Set<string>();
         const enablePreprocess = options?.enablePreprocess ?? true;
         const logDebug = options?.logDebug;
+        const includeDirs = options?.includeDirs ?? [];
 
         for (const uri of files) {
             try {
@@ -26,11 +32,12 @@ export class TsRegexParserBackend implements VerilogParserBackend {
                 const bytes = await vscode.workspace.fs.readFile(uri);
                 const text = Buffer.from(bytes).toString('utf8');
                 const fileDefines = new Set(activeDefines);
-                const modsInFile = parseModulesAndInstancesInFile(
+                const modsInFile = await parseModulesAndInstancesInFile(
                     text,
                     uri,
                     fileDefines,
                     enablePreprocess,
+                    includeDirs,
                 );
                 if (logDebug) {
                     const rel = vscode.workspace.asRelativePath(uri, false);
@@ -161,7 +168,13 @@ function stripVerilogComments(source: string): string {
     return out.join('');
 }
 
-function preprocessVerilog(clean: string, defines: Set<string>): string {
+async function preprocessVerilog(
+    clean: string,
+    defines: Set<string>,
+    fileUri: vscode.Uri,
+    includeDirs: vscode.Uri[],
+    visitedIncludes: Set<string>,
+): Promise<string> {
     const out = clean.split('');
     const stack: Array<{ parentActive: boolean; thisActive: boolean; branchTaken: boolean }> = [];
 
@@ -200,6 +213,38 @@ function preprocessVerilog(clean: string, defines: Set<string>): string {
                     const nameMatch = /^([a-zA-Z_]\w*)/.exec(rest);
                     if (nameMatch) {
                         defines.delete(nameMatch[1]);
+                    }
+                }
+            } else if (directive === 'include') {
+                if (isActive()) {
+                    const includeMatch = /["<]([^">]+)[">]/.exec(rest);
+                    if (includeMatch) {
+                        const includePath = includeMatch[1].trim();
+                        const includeUri = await resolveIncludePath(
+                            includePath,
+                            fileUri,
+                            includeDirs,
+                        );
+                        if (includeUri) {
+                            const key = includeUri.fsPath.toLowerCase();
+                            if (!visitedIncludes.has(key)) {
+                                visitedIncludes.add(key);
+                                try {
+                                    const bytes = await vscode.workspace.fs.readFile(includeUri);
+                                    const text = Buffer.from(bytes).toString('utf8');
+                                    const cleanInclude = stripVerilogComments(text);
+                                    await preprocessVerilog(
+                                        cleanInclude,
+                                        defines,
+                                        includeUri,
+                                        includeDirs,
+                                        visitedIncludes,
+                                    );
+                                } catch (err) {
+                                    console.warn(`Failed to read include: ${includeUri.fsPath}`, err);
+                                }
+                            }
+                        }
                     }
                 }
             } else if (directive === 'ifdef' || directive === 'ifndef') {
@@ -248,16 +293,23 @@ function preprocessVerilog(clean: string, defines: Set<string>): string {
     return out.join('');
 }
 
-function parseModulesAndInstancesInFile(
+async function parseModulesAndInstancesInFile(
     source: string,
     uri: vscode.Uri,
     defines: Set<string>,
     enablePreprocess: boolean,
-): ParsedModule[] {
+    includeDirs: vscode.Uri[],
+): Promise<ParsedModule[]> {
     const modules: ParsedModule[] = [];
     let clean = stripVerilogComments(source);
     if (enablePreprocess) {
-        clean = preprocessVerilog(clean, defines);
+        clean = await preprocessVerilog(
+            clean,
+            defines,
+            uri,
+            includeDirs,
+            new Set<string>(),
+        );
     }
 
     // Important: only space/tab, no '\n'
@@ -305,6 +357,31 @@ function parseModulesAndInstancesInFile(
         });
     }
     return modules;
+}
+
+async function resolveIncludePath(
+    includePath: string,
+    fileUri: vscode.Uri,
+    includeDirs: vscode.Uri[],
+): Promise<vscode.Uri | null> {
+    if (path.isAbsolute(includePath)) {
+        return vscode.Uri.file(includePath);
+    }
+
+    const fileDir = vscode.Uri.joinPath(fileUri, '..');
+    const candidates = [fileDir, ...includeDirs];
+
+    for (const base of candidates) {
+        const candidate = vscode.Uri.joinPath(base, includePath);
+        try {
+            await vscode.workspace.fs.stat(candidate);
+            return candidate;
+        } catch {
+            continue;
+        }
+    }
+
+    return null;
 }
 
 function parseInstantiationsInText(

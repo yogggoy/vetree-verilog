@@ -521,17 +521,23 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
 
 type ConnectionInfo = {
     label: string;
-    location?: vscode.Location;
+    locationA?: vscode.Location;
+    locationB?: vscode.Location;
 };
 
 class ConnectionNode extends vscode.TreeItem {
-    constructor(label: string, location?: vscode.Location) {
+    public readonly locationA?: vscode.Location;
+    public readonly locationB?: vscode.Location;
+
+    constructor(label: string, locationA?: vscode.Location, locationB?: vscode.Location) {
         super(label, vscode.TreeItemCollapsibleState.None);
-        if (location) {
+        this.locationA = locationA;
+        this.locationB = locationB;
+        if (locationA || locationB) {
             this.command = {
-                command: 'vscode.open',
-                title: 'Open Connection',
-                arguments: [location.uri, { selection: location.range }],
+                command: 'vetree-verilog.openDirectConnectionA',
+                title: 'Open Endpoint A',
+                arguments: [this],
             };
         }
     }
@@ -544,7 +550,7 @@ class DirectConnectionsProvider implements vscode.TreeDataProvider<ConnectionNod
     private data: ConnectionNode[] = [];
 
     update(connections: ConnectionInfo[]): void {
-        this.data = connections.map(c => new ConnectionNode(c.label, c.location));
+        this.data = connections.map(c => new ConnectionNode(c.label, c.locationA, c.locationB));
         this._onDidChangeTreeData.fire();
     }
 
@@ -568,6 +574,7 @@ class DirectConnectionsProvider implements vscode.TreeDataProvider<ConnectionNod
 type FilelistData = {
     defines: Set<string>;
     files: vscode.Uri[];
+    includeDirs: vscode.Uri[];
     topModule?: string;
 };
 
@@ -576,22 +583,22 @@ async function loadFilelist(): Promise<FilelistData> {
     const config = vscode.workspace.getConfiguration('vetree-verilog');
     const definesFile = config.get<string>('definesFile');
     if (!definesFile) {
-        return { defines, files: [] };
+        return { defines, files: [], includeDirs: [] };
     }
 
     const uri = resolveDefinesFileUri(definesFile);
     if (!uri) {
         console.warn('Defines file path is set, but no workspace folder is open.');
-        return { defines, files: [] };
+        return { defines, files: [], includeDirs: [] };
     }
 
     try {
         const bytes = await vscode.workspace.fs.readFile(uri);
         const text = Buffer.from(bytes).toString('utf8');
-        return await parseFilelist(text, uri);
+        return await parseFilelist(text, uri, new Set<string>());
     } catch (err) {
         console.warn(`Failed to read defines file: ${uri.fsPath}`, err);
-        return { defines, files: [] };
+        return { defines, files: [], includeDirs: [] };
     }
 }
 
@@ -606,16 +613,28 @@ function resolveDefinesFileUri(definesFile: string): vscode.Uri | null {
     return vscode.Uri.joinPath(folders[0].uri, definesFile);
 }
 
-async function parseFilelist(text: string, filelistUri: vscode.Uri): Promise<FilelistData> {
+async function parseFilelist(
+    text: string,
+    filelistUri: vscode.Uri,
+    visited: Set<string>,
+): Promise<FilelistData> {
     const defines = new Set<string>();
     const files: vscode.Uri[] = [];
+    const includeDirs: vscode.Uri[] = [];
     let topModule: string | undefined;
 
     const folders = vscode.workspace.workspaceFolders;
     const workspaceRoot = folders && folders.length > 0 ? folders[0].uri : undefined;
     const baseDir = vscode.Uri.joinPath(filelistUri, '..');
 
+    const key = filelistUri.fsPath.toLowerCase();
+    if (visited.has(key)) {
+        return { defines, files, includeDirs, topModule };
+    }
+    visited.add(key);
+
     const lines = text.split(/\r?\n/);
+    let expectNestedFilelist = false;
     for (const rawLine of lines) {
         const line = rawLine.trim();
         if (!line || line.startsWith('//') || line.startsWith('#')) {
@@ -624,6 +643,26 @@ async function parseFilelist(text: string, filelistUri: vscode.Uri): Promise<Fil
 
         const tokens = line.split(/\s+/);
         for (const token of tokens) {
+            if (expectNestedFilelist) {
+                expectNestedFilelist = false;
+                const nestedUri = resolveFilePath(token, baseDir);
+                if (nestedUri) {
+                    try {
+                        const bytes = await vscode.workspace.fs.readFile(nestedUri);
+                        const nestedText = Buffer.from(bytes).toString('utf8');
+                        const nested = await parseFilelist(nestedText, nestedUri, visited);
+                        nested.defines.forEach(d => defines.add(d));
+                        files.push(...nested.files);
+                        includeDirs.push(...nested.includeDirs);
+                        if (!topModule && nested.topModule) {
+                            topModule = nested.topModule;
+                        }
+                    } catch (err) {
+                        console.warn(`Failed to read nested filelist: ${nestedUri.fsPath}`, err);
+                    }
+                }
+                continue;
+            }
             if (token.startsWith('+define+')) {
                 const rest = token.slice('+define+'.length);
                 const parts = rest.split('+');
@@ -644,11 +683,36 @@ async function parseFilelist(text: string, filelistUri: vscode.Uri): Promise<Fil
                     topModule = name;
                 }
             } else if (token.startsWith('+incdir+')) {
-                continue;
+                const dir = token.slice('+incdir+'.length).trim();
+                const dirUri = resolveFilePath(dir, baseDir);
+                if (dirUri) {
+                    includeDirs.push(dirUri);
+                }
             } else if (token.startsWith('-I')) {
-                continue;
+                const dir = token.slice(2).trim();
+                const dirUri = resolveFilePath(dir, baseDir);
+                if (dirUri) {
+                    includeDirs.push(dirUri);
+                }
             } else if (token === '-f') {
-                continue;
+                expectNestedFilelist = true;
+            } else if (token.startsWith('-f') && token.length > 2) {
+                const nestedUri = resolveFilePath(token.slice(2), baseDir);
+                if (nestedUri) {
+                    try {
+                        const bytes = await vscode.workspace.fs.readFile(nestedUri);
+                        const nestedText = Buffer.from(bytes).toString('utf8');
+                        const nested = await parseFilelist(nestedText, nestedUri, visited);
+                        nested.defines.forEach(d => defines.add(d));
+                        files.push(...nested.files);
+                        includeDirs.push(...nested.includeDirs);
+                        if (!topModule && nested.topModule) {
+                            topModule = nested.topModule;
+                        }
+                    } catch (err) {
+                        console.warn(`Failed to read nested filelist: ${nestedUri.fsPath}`, err);
+                    }
+                }
             } else if (token.includes('*') || token.includes('?') || token.includes('[')) {
                 if (!workspaceRoot) {
                     continue;
@@ -668,7 +732,7 @@ async function parseFilelist(text: string, filelistUri: vscode.Uri): Promise<Fil
         }
     }
 
-    return { defines, files, topModule };
+    return { defines, files, includeDirs, topModule };
 }
 
 function resolveFilePath(token: string, baseDir: vscode.Uri): vscode.Uri | null {
@@ -747,7 +811,8 @@ function findDirectConnections(
             for (const pb of portsB) {
                 result.push({
                     label: `${instA.instanceName}.${pa.portName} - ${instB.instanceName}.${pb.portName}`,
-                    location: pa.location,
+                    locationA: pa.location,
+                    locationB: pb.location,
                 });
             }
         }
@@ -950,6 +1015,7 @@ export function activate(context: vscode.ExtensionContext) {
         const design = await backend.parseFiles(filteredFiles, filelist.defines, {
             enablePreprocess,
             logDebug,
+            includeDirs: filelist.includeDirs,
         });
         currentDesign = design;
 
@@ -1199,6 +1265,72 @@ export function activate(context: vscode.ExtensionContext) {
         },
     );
     context.subscriptions.push(showDirectConnectionsCmd);
+
+    const openEndpoint = async (item: ConnectionNode, side: 'A' | 'B' | 'both') => {
+            const locA = item?.locationA;
+            const locB = item?.locationB;
+            if (side === 'A' && !locA) {
+                vscode.window.showInformationMessage('Endpoint A location not available.');
+                return;
+            }
+            if (side === 'B' && !locB) {
+                vscode.window.showInformationMessage('Endpoint B location not available.');
+                return;
+            }
+            if (side === 'both' && (!locA || !locB)) {
+                vscode.window.showInformationMessage('Both endpoint locations are required.');
+                return;
+            }
+
+            if (side === 'A' && locA) {
+                const doc = await vscode.workspace.openTextDocument(locA.uri);
+                const editor = await vscode.window.showTextDocument(doc);
+                editor.selection = new vscode.Selection(locA.range.start, locA.range.start);
+                editor.revealRange(locA.range, vscode.TextEditorRevealType.InCenter);
+                return;
+            }
+
+            if (side === 'B' && locB) {
+                const doc = await vscode.workspace.openTextDocument(locB.uri);
+                const editor = await vscode.window.showTextDocument(doc);
+                editor.selection = new vscode.Selection(locB.range.start, locB.range.start);
+                editor.revealRange(locB.range, vscode.TextEditorRevealType.InCenter);
+                return;
+            }
+
+            if (side === 'both' && locA && locB) {
+                const docA = await vscode.workspace.openTextDocument(locA.uri);
+                const editorA = await vscode.window.showTextDocument(docA);
+                editorA.selection = new vscode.Selection(locA.range.start, locA.range.start);
+                editorA.revealRange(locA.range, vscode.TextEditorRevealType.InCenter);
+
+                const docB = await vscode.workspace.openTextDocument(locB.uri);
+                const columns = vscode.window.visibleTextEditors
+                    .map(e => e.viewColumn)
+                    .filter((v): v is vscode.ViewColumn => v !== undefined);
+                const uniqueColumns = new Set(columns);
+                const targetColumn = uniqueColumns.size >= 2
+                    ? (columns.find(c => c !== editorA.viewColumn) ?? vscode.ViewColumn.Beside)
+                    : vscode.ViewColumn.Beside;
+                const editorB = await vscode.window.showTextDocument(docB, targetColumn);
+                editorB.selection = new vscode.Selection(locB.range.start, locB.range.start);
+                editorB.revealRange(locB.range, vscode.TextEditorRevealType.InCenter);
+            }
+        };
+
+    const openEndpointACmd = vscode.commands.registerCommand(
+        'vetree-verilog.openDirectConnectionA',
+        async (item: ConnectionNode) => openEndpoint(item, 'A'),
+    );
+    const openEndpointBCmd = vscode.commands.registerCommand(
+        'vetree-verilog.openDirectConnectionB',
+        async (item: ConnectionNode) => openEndpoint(item, 'B'),
+    );
+    const openEndpointBothCmd = vscode.commands.registerCommand(
+        'vetree-verilog.openDirectConnectionBoth',
+        async (item: ConnectionNode) => openEndpoint(item, 'both'),
+    );
+    context.subscriptions.push(openEndpointACmd, openEndpointBCmd, openEndpointBothCmd);
 
     const updateDirectConnections = async () => {
         if (!endpointA || !endpointB) {

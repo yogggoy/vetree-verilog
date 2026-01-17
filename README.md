@@ -1,6 +1,6 @@
 # vetree-verilog
 
-Lightweight VS Code extension for quick exploration of Verilog/SystemVerilog projects. It builds a project tree and hierarchy, lets you navigate modules/instances/ports, and helps you inspect direct connections between instances. It is designed to be fast to set up and does not require external tools, but the parser is a native TypeScript implementation, so results are best‑effort and can be incomplete on complex codebases.
+Lightweight VS Code extension for quick exploration of Verilog/SystemVerilog projects. It builds a project tree and hierarchy, lets you navigate modules/instances/ports, and helps you inspect direct connections between instances. It is designed to be fast to set up and does not require external tools, but the parser is a native TypeScript implementation, so results are best-effort and can be incomplete on complex codebases.
 
 ## What problem it solves
 
@@ -22,6 +22,7 @@ This extension provides a quick, visual map of the project and navigation helper
 - QuickPick list of module ports with jump to declaration.
 - Auto refresh on file changes.
 - Optional preprocessing support for `define/ifdef/ifndef/elsif/else/endif`.
+- Basic `include` handling using `+incdir+` from filelists.
 - Direct connection lookup between two instances (named port bindings).
 
 ## Views
@@ -48,7 +49,7 @@ You will see a "Verilog" activity bar container with:
 
 ## Settings
 
-- `vetree-verilog.definesFile`: Path to a `.f` file that defines files to scan and `+define+` flags.
+- `vetree-verilog.definesFile`: Path to a `.f` file that defines files to scan and flags (`+define+`, `+incdir+`, `-I`, `-f`, `+top+`).
 - `vetree-verilog.maxFileSizeMB`: Skip files larger than this size (MB). Set to `0` to disable.
 - `vetree-verilog.quickScan`: Skip preprocessing for faster scans.
 - `vetree-verilog.maxHierarchyDepth`: Maximum depth for hierarchy traversal.
@@ -61,19 +62,19 @@ You will see a "Verilog" activity bar container with:
 
 1) Open a workspace with Verilog/SystemVerilog files.
 2) Use the **Verilog Project Tree** and **Verilog Hierarchy** views to browse the structure.
-3) Right‑click a module to set it as top module if the hierarchy is too large.
+3) Right-click a module to set it as top module if the hierarchy is too large.
 4) Use **Show Module Ports** to inspect ports directly under a module node.
 5) To find direct connections:
-   - Right‑click two instance nodes in the hierarchy and select **Endpoint A** / **Endpoint B**.
+   - Right-click two instance nodes in the hierarchy and select **Endpoint A** / **Endpoint B**.
    - The **Direct Connections** view will show the pairs.
 
-If a project uses a filelist, set `vetree-verilog.definesFile` so the extension scans only those files and honors `+define+` flags.
+If a project uses a filelist, set `vetree-verilog.definesFile` so the extension scans only those files and honors flags from the filelist (including nested `-f` lists).
 
 ## Notes
 
 - If a project contains many duplicate module names (for example vendor tags), use `hierarchyResolve: "first"` or set `hierarchyTopModule` to keep the hierarchy stable.
 - You can set the top module from the tree context menu and clear it with `vetree: Clear Top Module`.
-- Preprocessing is intentionally minimal and does not yet handle `include` files.
+- `include` is supported as a lightweight define pass; included files are not merged into the current file.
 - When `definesFile` is set and resolves to files, only those files are scanned.
 - Direct connections are based on named port bindings within the same parent module.
 - Direct connection results appear in the "Direct Connections" view.
@@ -82,8 +83,7 @@ If a project uses a filelist, set `vetree-verilog.definesFile` so the extension 
 
 - The parser is a lightweight TypeScript implementation, not a full Verilog compiler.
 - Complex macros, generate blocks, or heavy conditional compilation can reduce accuracy.
-- `include` handling and include paths are not implemented yet.
-
+- 
 ## Example `.f` file
 
 ```text
@@ -95,7 +95,7 @@ If a project uses a filelist, set `vetree-verilog.definesFile` so the extension 
 // Top module (optional)
 +top+chip
 
-// Include dirs (currently ignored by the parser)
+// Include dirs (used for `include` define scanning)
 +incdir+uart
 
 // Sources
@@ -104,6 +104,7 @@ cpu.sv
 decode.sv
 commit.sv
 rtl/**/*.sv
+-f common.f
 ```
 
 ## Troubleshooting
