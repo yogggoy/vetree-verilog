@@ -9,16 +9,34 @@ import {
 } from './types';
 
 export class TsRegexParserBackend implements VerilogParserBackend {
-    async parseFiles(files: vscode.Uri[], defines?: Set<string>): Promise<ParsedDesign> {
+    async parseFiles(
+        files: vscode.Uri[],
+        defines?: Set<string>,
+        options?: { enablePreprocess?: boolean; logDebug?: (message: string) => void },
+    ): Promise<ParsedDesign> {
         const modules: ParsedModule[] = [];
         const activeDefines = defines ?? new Set<string>();
+        const enablePreprocess = options?.enablePreprocess ?? true;
+        const logDebug = options?.logDebug;
 
         for (const uri of files) {
             try {
+                const start = Date.now();
                 const bytes = await vscode.workspace.fs.readFile(uri);
                 const text = Buffer.from(bytes).toString('utf8');
                 const fileDefines = new Set(activeDefines);
-                const modsInFile = parseModulesAndInstancesInFile(text, uri, fileDefines);
+                const modsInFile = parseModulesAndInstancesInFile(
+                    text,
+                    uri,
+                    fileDefines,
+                    enablePreprocess,
+                );
+                if (logDebug) {
+                    const rel = vscode.workspace.asRelativePath(uri, false);
+                    logDebug(
+                        `Parsed ${rel}: modules=${modsInFile.length}, time=${Date.now() - start}ms`,
+                    );
+                }
                 modules.push(...modsInFile);
             } catch (err) {
                 console.error(`Failed to read ${uri.fsPath}:`, err);
@@ -233,10 +251,13 @@ function parseModulesAndInstancesInFile(
     source: string,
     uri: vscode.Uri,
     defines: Set<string>,
+    enablePreprocess: boolean,
 ): ParsedModule[] {
     const modules: ParsedModule[] = [];
     let clean = stripVerilogComments(source);
-    clean = preprocessVerilog(clean, defines);
+    if (enablePreprocess) {
+        clean = preprocessVerilog(clean, defines);
+    }
 
     // Important: only space/tab, no '\n'
     const moduleRegex = /^[ \t]*module\s+([a-zA-Z_]\w*)/gm;

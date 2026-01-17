@@ -95,6 +95,45 @@
           "type": "string",
           "default": "",
           "description": "Path to a .f file that provides +define+ flags for the Verilog parser."
+        },
+        "vetree-verilog.maxFileSizeMB": {
+          "type": "number",
+          "default": 10,
+          "description": "Skip Verilog files larger than this size (MB). Set to 0 to disable."
+        },
+        "vetree-verilog.quickScan": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip preprocessor handling for faster scans."
+        },
+        "vetree-verilog.maxHierarchyDepth": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum depth for the hierarchy tree to prevent runaway recursion."
+        },
+        "vetree-verilog.debugLogging": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable verbose logging for troubleshooting."
+        },
+        "vetree-verilog.skipHierarchyBuild": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip building the hierarchy tree for troubleshooting."
+        },
+        "vetree-verilog.hierarchyResolve": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "all",
+            "first"
+          ],
+          "description": "Resolve multiple module implementations by taking all or only the first."
+        },
+        "vetree-verilog.hierarchyTopModule": {
+          "type": "string",
+          "default": "",
+          "description": "Limit hierarchy roots to this top module name."
         }
       }
     }

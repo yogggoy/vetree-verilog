@@ -275,13 +275,45 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
     private design: ParsedDesign | null = null;
     private roots: string[] = [];
     private rootNodes: HierarchyNode[] = [];
+    private maxDepth = 100;
+    private resolveStrategy: 'all' | 'first' = 'all';
+    private topModule: string | undefined;
+    private stats = {
+        nodeCount: 0,
+        maxDepthSeen: 0,
+        depthLimitHits: 0,
+        cycleHits: 0,
+    };
 
-    update(design: ParsedDesign | null): void {
+    update(
+        design: ParsedDesign | null,
+        maxDepth: number,
+        resolveStrategy: 'all' | 'first',
+        topModule?: string,
+    ): void {
         this.design = design;
         this.recomputeRoots();
-        this.rootNodes = this.roots.map(name =>
-            this.createNodeForModule(name, new Set()),
+        this.maxDepth = maxDepth;
+        this.resolveStrategy = resolveStrategy;
+        this.topModule = topModule;
+        this.stats = {
+            nodeCount: 0,
+            maxDepthSeen: 0,
+            depthLimitHits: 0,
+            cycleHits: 0,
+        };
+        const rootList = this.topModule
+            ? this.roots.filter(r => r === this.topModule)
+            : this.roots;
+        this.rootNodes = rootList.map(name =>
+            this.createNodeForModule(name, new Set(), undefined, undefined, undefined, 0),
         );
+        if (this.design) {
+            console.log(
+                `Hierarchy build: nodes=${this.stats.nodeCount}, maxDepth=${this.stats.maxDepthSeen}, ` +
+                `depthLimitHits=${this.stats.depthLimitHits}, cycles=${this.stats.cycleHits}`,
+            );
+        }
         this._onDidChangeTreeData.fire();
     }
 
@@ -332,12 +364,29 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
         instanceLocation?: vscode.Location,
         definitionLocation?: vscode.Location,
         parent?: HierarchyNode,
+        depth?: number,
     ): HierarchyNode {
+        const safeDepth = depth ?? 0;
+        this.stats.maxDepthSeen = Math.max(this.stats.maxDepthSeen, safeDepth);
+
         if (!this.design) {
             return new HierarchyNode(name, name, vscode.TreeItemCollapsibleState.None);
         }
 
+        if (safeDepth >= this.maxDepth) {
+            this.stats.depthLimitHits++;
+            this.stats.nodeCount++;
+            return new HierarchyNode(
+                name,
+                `${name} (depth limit)`,
+                vscode.TreeItemCollapsibleState.None,
+                { instanceLocation, definitionLocation, parent },
+            );
+        }
+
         if (visited.has(name)) {
+            this.stats.cycleHits++;
+            this.stats.nodeCount++;
             return new HierarchyNode(
                 name,
                 `${name} (cycle)`,
@@ -363,18 +412,20 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
         for (const inst of instances) {
             const targets = this.design.modulesByName.get(inst.moduleName);
             if (!targets || targets.length === 0) {
-                children.push(
-                    new HierarchyNode(
-                        inst.moduleName,
-                        `${inst.instanceName}: ${inst.moduleName} (external)`,
-                        vscode.TreeItemCollapsibleState.None,
-                        { instanceLocation: inst.location, parent: undefined },
-                    ),
+                const externalNode = new HierarchyNode(
+                    inst.moduleName,
+                    `${inst.instanceName}: ${inst.moduleName} (external)`,
+                    vscode.TreeItemCollapsibleState.None,
+                    { instanceLocation: inst.location, parent: undefined },
                 );
+                this.stats.nodeCount++;
+                children.push(externalNode);
                 continue;
             }
 
-            for (const t of targets) {
+            const resolvedTargets =
+                this.resolveStrategy === 'first' ? targets.slice(0, 1) : targets;
+            for (const t of resolvedTargets) {
                 const childLoc = new vscode.Location(t.uri, t.definitionRange);
                 const childNode = this.createNodeForModule(
                     t.name,
@@ -382,6 +433,7 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
                     inst.location,
                     childLoc,
                     undefined,
+                    safeDepth + 1,
                 );
                 childNode.label = `${inst.instanceName}: ${t.name}`;
                 children.push(childNode);
@@ -403,6 +455,7 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
                 parent,
             },
         );
+        this.stats.nodeCount++;
         for (const child of children) {
             child.parent = node;
         }
@@ -492,6 +545,52 @@ function parseDefinesFromFilelist(text: string, defines: Set<string>): void {
     }
 }
 
+async function filterFilesBySize(
+    files: vscode.Uri[],
+    maxFileSizeMB: number,
+): Promise<{ filteredFiles: vscode.Uri[] }> {
+    const stats: Array<{ uri: vscode.Uri; size: number }> = [];
+    let totalSize = 0;
+
+    await Promise.all(files.map(async (uri) => {
+        try {
+            const stat = await vscode.workspace.fs.stat(uri);
+            stats.push({ uri, size: stat.size });
+            totalSize += stat.size;
+        } catch (err) {
+            console.warn(`Failed to stat file: ${uri.fsPath}`, err);
+        }
+    }));
+
+    const sorted = [...stats].sort((a, b) => b.size - a.size);
+    const top = sorted.slice(0, 5);
+    const totalMB = (totalSize / (1024 * 1024)).toFixed(2);
+
+    console.log(
+        `Verilog scan: ${stats.length} files, total ${totalMB} MB. Top files:`,
+    );
+    for (const entry of top) {
+        const sizeMB = (entry.size / (1024 * 1024)).toFixed(2);
+        const rel = vscode.workspace.asRelativePath(entry.uri, false);
+        console.log(`  ${rel} (${sizeMB} MB)`);
+    }
+
+    if (!maxFileSizeMB || maxFileSizeMB <= 0) {
+        return { filteredFiles: stats.map(s => s.uri) };
+    }
+
+    const limitBytes = maxFileSizeMB * 1024 * 1024;
+    const filtered = stats.filter(s => s.size <= limitBytes);
+    const skipped = stats.length - filtered.length;
+    if (skipped > 0) {
+        console.warn(
+            `Verilog scan: skipped ${skipped} file(s) larger than ${maxFileSizeMB} MB.`,
+        );
+    }
+
+    return { filteredFiles: filtered.map(s => s.uri) };
+}
+
 // -------------------- DefinitionProvider --------------------
 
 class VerilogDefinitionProvider implements vscode.DefinitionProvider {
@@ -561,16 +660,41 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(projectTreeView, hierarchyTreeView);
 
     let refreshTimer: NodeJS.Timeout | undefined;
+    let refreshInProgress = false;
+    let refreshPending = false;
+    let lastDuplicateWarning = '';
+
+    const isDebugEnabled = () =>
+        vscode.workspace.getConfiguration('vetree-verilog').get<boolean>('debugLogging') ?? false;
+
+    const logDebug = (message: string) => {
+        if (isDebugEnabled()) {
+            console.log(message);
+        }
+    };
 
     const fullRefresh = async () => {
+        if (refreshInProgress) {
+            refreshPending = true;
+            return;
+        }
+        refreshInProgress = true;
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
             currentDesign = null;
             projectTreeProvider.update([], null);
-            hierarchyProvider.update(null);
+            const maxHierarchyDepth = vscode.workspace
+                .getConfiguration('vetree-verilog')
+                .get<number>('maxHierarchyDepth') ?? 100;
+            const config = vscode.workspace.getConfiguration('vetree-verilog');
+            const resolveStrategy = config.get<'all' | 'first'>('hierarchyResolve') ?? 'all';
+            const topModule = config.get<string>('hierarchyTopModule')?.trim() || undefined;
+            hierarchyProvider.update(null, maxHierarchyDepth, resolveStrategy, topModule);
+            refreshInProgress = false;
             return;
         }
 
+        const refreshStart = Date.now();
         const defines = await loadDefinesFromFile();
 
         const files = await vscode.workspace.findFiles(
@@ -578,11 +702,65 @@ export function activate(context: vscode.ExtensionContext) {
             '**/{.git,node_modules,out,dist,build}/**',
         );
 
-        const design = await backend.parseFiles(files, defines);
+        const config = vscode.workspace.getConfiguration('vetree-verilog');
+        const maxFileSizeMB = config.get<number>('maxFileSizeMB') ?? 0;
+        const enablePreprocess = !(config.get<boolean>('quickScan') ?? false);
+        const maxHierarchyDepth = config.get<number>('maxHierarchyDepth') ?? 100;
+        const skipHierarchyBuild = config.get<boolean>('skipHierarchyBuild') ?? false;
+        const resolveStrategy = config.get<'all' | 'first'>('hierarchyResolve') ?? 'all';
+        const topModule = config.get<string>('hierarchyTopModule')?.trim() || undefined;
+
+        const { filteredFiles } = await filterFilesBySize(files, maxFileSizeMB);
+
+        logDebug(
+            `Refresh start: files=${filteredFiles.length}, defines=${defines.size}, ` +
+            `preprocess=${enablePreprocess}, maxDepth=${maxHierarchyDepth}`,
+        );
+
+        const design = await backend.parseFiles(filteredFiles, defines, {
+            enablePreprocess,
+            logDebug,
+        });
         currentDesign = design;
 
-        projectTreeProvider.update(files, design);
-        hierarchyProvider.update(design);
+        projectTreeProvider.update(filteredFiles, design);
+        if (skipHierarchyBuild) {
+            logDebug('Hierarchy build skipped by configuration.');
+            hierarchyProvider.update(null, maxHierarchyDepth, resolveStrategy, topModule);
+        } else {
+            const duplicates = Array.from(design.modulesByName.entries())
+                .filter(([, mods]) => mods.length > 1)
+                .sort((a, b) => b[1].length - a[1].length);
+            if (duplicates.length > 0) {
+                const top = duplicates
+                    .slice(0, 5)
+                    .map(([name, mods]) => `${name}(${mods.length})`)
+                    .join(', ');
+                logDebug(`Duplicate module names: ${duplicates.length} (top: ${top})`);
+                const key = `${duplicates.length}:${topModule ?? ''}:${resolveStrategy}`;
+                if (key !== lastDuplicateWarning) {
+                    lastDuplicateWarning = key;
+                    vscode.window.showInformationMessage(
+                        `Multiple definitions found for ${duplicates.length} module(s). ` +
+                        `Consider setting "vetree-verilog.hierarchyResolve": "first" ` +
+                        `or "vetree-verilog.hierarchyTopModule".`,
+                    );
+                }
+            }
+            hierarchyProvider.update(design, maxHierarchyDepth, resolveStrategy, topModule);
+        }
+
+        const refreshEnd = Date.now();
+        const mem = process.memoryUsage();
+        logDebug(
+            `Refresh done: modules=${design.modules.length}, time=${refreshEnd - refreshStart}ms, ` +
+            `rss=${(mem.rss / 1048576).toFixed(1)}MB, heapUsed=${(mem.heapUsed / 1048576).toFixed(1)}MB`,
+        );
+        refreshInProgress = false;
+        if (refreshPending) {
+            refreshPending = false;
+            scheduleFullRefresh();
+        }
     };
 
     const scheduleFullRefresh = () => {
