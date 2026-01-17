@@ -3,6 +3,16 @@
   "displayName": "vetree-verilog",
   "description": "Verilog project tree viewer",
   "version": "0.0.1",
+  "publisher": "vetree",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yogggoy/vetree-verilog"
+  },
+  "bugs": {
+    "url": "https://github.com/yogggoy/vetree-verilog/issues"
+  },
+  "homepage": "https://github.com/yogggoy/vetree-verilog#readme",
   "engines": {
     "vscode": "^1.106.1"
   },

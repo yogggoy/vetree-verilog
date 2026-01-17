@@ -1,6 +1,15 @@
 # default all file is CRLF
 * text eol=crlf
 
+# binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.svg binary
+*.ico binary
+*.pdf binary
+
 # exception for LF – should be added below:
 # *.sh text eol=lf
 # *.yml text eol=lf
