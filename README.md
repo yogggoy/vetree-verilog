@@ -29,7 +29,7 @@ You will see a "Verilog" activity bar container with:
 
 ## Settings
 
-- `vetree-verilog.definesFile`: Path to a `.f` file that provides `+define+` flags.
+- `vetree-verilog.definesFile`: Path to a `.f` file that defines files to scan and `+define+` flags.
 - `vetree-verilog.maxFileSizeMB`: Skip files larger than this size (MB). Set to `0` to disable.
 - `vetree-verilog.quickScan`: Skip preprocessing for faster scans.
 - `vetree-verilog.maxHierarchyDepth`: Maximum depth for hierarchy traversal.
@@ -50,6 +50,9 @@ You will see a "Verilog" activity bar container with:
 +define+SIMV
 +define+SIMD
 +define+N64
+
+// Top module (optional)
++top+chip
 
 // Include dirs (currently ignored by the parser)
 +incdir+uart

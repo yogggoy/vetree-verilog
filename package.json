@@ -57,6 +57,10 @@
       {
         "command": "vetree-verilog.revealInProjectTree",
         "title": "vetree: Reveal in Project Tree"
+      },
+      {
+        "command": "vetree-verilog.setTopModule",
+        "title": "vetree: Set as Top Module"
       }
     ],
     "menus": {
@@ -68,6 +72,11 @@
         },
         {
           "command": "vetree-verilog.revealInHierarchy",
+          "when": "view == vetreeVerilogView && viewItem == verilogModule",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.setTopModule",
           "when": "view == vetreeVerilogView && viewItem == verilogModule",
           "group": "navigation"
         },
@@ -85,6 +94,11 @@
           "command": "vetree-verilog.revealInProjectTree",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
           "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.setTopModule",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
+          "group": "navigation"
         }
       ]
     },
@@ -94,7 +108,7 @@
         "vetree-verilog.definesFile": {
           "type": "string",
           "default": "",
-          "description": "Path to a .f file that provides +define+ flags for the Verilog parser."
+          "description": "Path to a .f file that defines files to scan and +define+ flags for the Verilog parser."
         },
         "vetree-verilog.maxFileSizeMB": {
           "type": "number",

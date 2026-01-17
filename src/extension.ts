@@ -480,29 +480,34 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
     }
 }
 
-async function loadDefinesFromFile(): Promise<Set<string>> {
+type FilelistData = {
+    defines: Set<string>;
+    files: vscode.Uri[];
+    topModule?: string;
+};
+
+async function loadFilelist(): Promise<FilelistData> {
     const defines = new Set<string>();
     const config = vscode.workspace.getConfiguration('vetree-verilog');
     const definesFile = config.get<string>('definesFile');
     if (!definesFile) {
-        return defines;
+        return { defines, files: [] };
     }
 
     const uri = resolveDefinesFileUri(definesFile);
     if (!uri) {
         console.warn('Defines file path is set, but no workspace folder is open.');
-        return defines;
+        return { defines, files: [] };
     }
 
     try {
         const bytes = await vscode.workspace.fs.readFile(uri);
         const text = Buffer.from(bytes).toString('utf8');
-        parseDefinesFromFilelist(text, defines);
+        return await parseFilelist(text, uri);
     } catch (err) {
         console.warn(`Failed to read defines file: ${uri.fsPath}`, err);
+        return { defines, files: [] };
     }
-
-    return defines;
 }
 
 function resolveDefinesFileUri(definesFile: string): vscode.Uri | null {
@@ -516,7 +521,15 @@ function resolveDefinesFileUri(definesFile: string): vscode.Uri | null {
     return vscode.Uri.joinPath(folders[0].uri, definesFile);
 }
 
-function parseDefinesFromFilelist(text: string, defines: Set<string>): void {
+async function parseFilelist(text: string, filelistUri: vscode.Uri): Promise<FilelistData> {
+    const defines = new Set<string>();
+    const files: vscode.Uri[] = [];
+    let topModule: string | undefined;
+
+    const folders = vscode.workspace.workspaceFolders;
+    const workspaceRoot = folders && folders.length > 0 ? folders[0].uri : undefined;
+    const baseDir = vscode.Uri.joinPath(filelistUri, '..');
+
     const lines = text.split(/\r?\n/);
     for (const rawLine of lines) {
         const line = rawLine.trim();
@@ -540,9 +553,61 @@ function parseDefinesFromFilelist(text: string, defines: Set<string>): void {
                 if (name) {
                     defines.add(name);
                 }
+            } else if (token.startsWith('+top+')) {
+                const name = token.slice('+top+'.length).trim();
+                if (name) {
+                    topModule = name;
+                }
+            } else if (token.startsWith('+incdir+')) {
+                continue;
+            } else if (token.startsWith('-I')) {
+                continue;
+            } else if (token === '-f') {
+                continue;
+            } else if (token.includes('*') || token.includes('?') || token.includes('[')) {
+                if (!workspaceRoot) {
+                    continue;
+                }
+                const glob = makeWorkspaceGlob(token, baseDir, workspaceRoot);
+                if (!glob) {
+                    continue;
+                }
+                const matches = await vscode.workspace.findFiles(glob);
+                files.push(...matches);
+            } else {
+                const fileUri = resolveFilePath(token, baseDir);
+                if (fileUri) {
+                    files.push(fileUri);
+                }
             }
         }
     }
+
+    return { defines, files, topModule };
+}
+
+function resolveFilePath(token: string, baseDir: vscode.Uri): vscode.Uri | null {
+    const trimmed = token.trim();
+    if (!trimmed) {
+        return null;
+    }
+    if (path.isAbsolute(trimmed)) {
+        return vscode.Uri.file(trimmed);
+    }
+    return vscode.Uri.joinPath(baseDir, trimmed);
+}
+
+function makeWorkspaceGlob(
+    token: string,
+    baseDir: vscode.Uri,
+    workspaceRoot: vscode.Uri,
+): string | null {
+    const normalized = token.replace(/\\/g, '/');
+    if (path.isAbsolute(normalized)) {
+        return null;
+    }
+    const baseRel = vscode.workspace.asRelativePath(baseDir, false).replace(/\\/g, '/');
+    return baseRel ? `${baseRel}/${normalized}` : normalized;
 }
 
 async function filterFilesBySize(
@@ -663,6 +728,7 @@ export function activate(context: vscode.ExtensionContext) {
     let refreshInProgress = false;
     let refreshPending = false;
     let lastDuplicateWarning = '';
+    let lastTopModuleInfo = '';
 
     const isDebugEnabled = () =>
         vscode.workspace.getConfiguration('vetree-verilog').get<boolean>('debugLogging') ?? false;
@@ -695,12 +761,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const refreshStart = Date.now();
-        const defines = await loadDefinesFromFile();
-
-        const files = await vscode.workspace.findFiles(
-            '**/*.{v,sv}',
-            '**/{.git,node_modules,out,dist,build}/**',
-        );
+        const filelist = await loadFilelist();
 
         const config = vscode.workspace.getConfiguration('vetree-verilog');
         const maxFileSizeMB = config.get<number>('maxFileSizeMB') ?? 0;
@@ -708,16 +769,32 @@ export function activate(context: vscode.ExtensionContext) {
         const maxHierarchyDepth = config.get<number>('maxHierarchyDepth') ?? 100;
         const skipHierarchyBuild = config.get<boolean>('skipHierarchyBuild') ?? false;
         const resolveStrategy = config.get<'all' | 'first'>('hierarchyResolve') ?? 'all';
-        const topModule = config.get<string>('hierarchyTopModule')?.trim() || undefined;
+        const topModuleConfig = config.get<string>('hierarchyTopModule')?.trim() || undefined;
+
+        const files = filelist.files.length > 0
+            ? filelist.files
+            : await vscode.workspace.findFiles(
+                '**/*.{v,sv}',
+                '**/{.git,node_modules,out,dist,build}/**',
+            );
 
         const { filteredFiles } = await filterFilesBySize(files, maxFileSizeMB);
+        const topModule = topModuleConfig ?? filelist.topModule;
+
+        if (filelist.files.length > 0) {
+            const info = `Filelist mode: files=${filelist.files.length}, top=${filelist.topModule ?? ''}`;
+            if (info !== lastTopModuleInfo) {
+                lastTopModuleInfo = info;
+                logDebug(info);
+            }
+        }
 
         logDebug(
-            `Refresh start: files=${filteredFiles.length}, defines=${defines.size}, ` +
+            `Refresh start: files=${filteredFiles.length}, defines=${filelist.defines.size}, ` +
             `preprocess=${enablePreprocess}, maxDepth=${maxHierarchyDepth}`,
         );
 
-        const design = await backend.parseFiles(filteredFiles, defines, {
+        const design = await backend.parseFiles(filteredFiles, filelist.defines, {
             enablePreprocess,
             logDebug,
         });
@@ -901,6 +978,27 @@ export function activate(context: vscode.ExtensionContext) {
         },
     );
     context.subscriptions.push(revealInProjectTreeCmd);
+
+    const setTopModuleCmd = vscode.commands.registerCommand(
+        'vetree-verilog.setTopModule',
+        async (item: VerilogNode | HierarchyNode) => {
+            const moduleName =
+                item instanceof HierarchyNode
+                    ? item.moduleName
+                    : item instanceof VerilogNode
+                        ? item.moduleName
+                        : undefined;
+            if (!moduleName) {
+                vscode.window.showInformationMessage('No module associated with this item.');
+                return;
+            }
+            const config = vscode.workspace.getConfiguration('vetree-verilog');
+            await config.update('hierarchyTopModule', moduleName, vscode.ConfigurationTarget.Workspace);
+            vscode.window.showInformationMessage(`Top module set to "${moduleName}".`);
+            scheduleFullRefresh();
+        },
+    );
+    context.subscriptions.push(setTopModuleCmd);
 
     const goToDefinitionCmd = vscode.commands.registerCommand(
         'vetree-verilog.goToDefinition',
