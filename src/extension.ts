@@ -237,6 +237,20 @@ class VerilogProjectTreeProvider implements vscode.TreeDataProvider<VerilogNode>
         return this.findNode((node) => node.uri?.toString() === uri.toString());
     }
 
+    getAllNodes(): VerilogNode[] {
+        const result: VerilogNode[] = [];
+        const visit = (nodes: VerilogNode[]) => {
+            for (const node of nodes) {
+                result.push(node);
+                if (node.children && node.children.length > 0) {
+                    visit(node.children);
+                }
+            }
+        };
+        visit(this.data);
+        return result;
+    }
+
     findFirstMatch(query: string): VerilogNode | undefined {
         const text = query.trim().toLowerCase();
         if (!text) {
@@ -602,6 +616,21 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
             return undefined;
         };
         return visit(this.rootNodes);
+    }
+
+    getAllNodes(): HierarchyNode[] {
+        const result: HierarchyNode[] = [];
+        const visit = (nodes: HierarchyNode[]) => {
+            for (const node of nodes) {
+                result.push(node);
+                const children = node.children ?? [];
+                if (children.length > 0) {
+                    visit(children);
+                }
+            }
+        };
+        visit(this.rootNodes);
+        return result;
     }
 
     findFirstMatch(query: string): HierarchyNode | undefined {
@@ -1584,22 +1613,114 @@ export function activate(context: vscode.ExtensionContext) {
     );
     context.subscriptions.push(clearProjectTreeFilterCmd);
 
+    const makeWildcardMatcher = (query: string): ((value: string) => boolean) => {
+        const normalized = query.trim().toLowerCase();
+        const hasWildcard = normalized.includes('*') || normalized.includes('?');
+        if (!normalized) {
+            return () => false;
+        }
+        if (!hasWildcard) {
+            return (value: string) => value.toLowerCase().includes(normalized);
+        }
+        const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+        const pattern = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+        const regex = new RegExp(pattern, 'i');
+        return (value: string) => regex.test(value);
+    };
+
+    const revealNode = async (
+        view: vscode.TreeView<VerilogNode | HierarchyNode>,
+        node: VerilogNode | HierarchyNode,
+    ) => {
+        await view.reveal(node, { select: true, focus: true, expand: true });
+    };
+
+    const runNodeCommand = async (node: VerilogNode | HierarchyNode) => {
+        const command = node.command;
+        if (!command) {
+            return;
+        }
+        await vscode.commands.executeCommand(
+            command.command,
+            ...(command.arguments ?? []),
+        );
+    };
+
     const searchProjectTreeCmd = vscode.commands.registerCommand(
         'vetree-verilog.searchProjectTree',
         async () => {
-            const query = await vscode.window.showInputBox({
-                title: 'Search project tree',
-                prompt: 'Type a file path or module name',
+            const quickPick = vscode.window.createQuickPick<vscode.QuickPickItem & {
+                node?: VerilogNode;
+            }>();
+            quickPick.title = 'Search project tree';
+            quickPick.placeholder = 'Type a file path or module name (* and ? supported)';
+            quickPick.matchOnDescription = true;
+            quickPick.matchOnDetail = true;
+            quickPick.buttons = [
+                { iconPath: new vscode.ThemeIcon('arrow-up'), tooltip: 'Previous result' },
+                { iconPath: new vscode.ThemeIcon('arrow-down'), tooltip: 'Next result' },
+            ];
+
+            const allNodes = projectTreeProvider.getAllNodes();
+            let resultNodes: VerilogNode[] = [];
+            let activeIndex = 0;
+
+            const buildItems = (value: string) => {
+                const matcher = makeWildcardMatcher(value);
+                resultNodes = allNodes.filter(node => {
+                    const label = typeof node.label === 'string'
+                        ? node.label
+                        : node.label?.toString() ?? '';
+                    const moduleName = node.moduleName ?? '';
+                    const pathText = node.uri?.fsPath ?? '';
+                    return matcher(label) || matcher(moduleName) || matcher(pathText);
+                });
+
+                const items = resultNodes.map(node => {
+                    const label = typeof node.label === 'string'
+                        ? node.label
+                        : node.label?.toString() ?? '';
+                    const desc = node.uri ? vscode.workspace.asRelativePath(node.uri) : undefined;
+                    const detail = node.moduleName ? `module: ${node.moduleName}` : undefined;
+                    return { label, description: desc, detail, node };
+                });
+                quickPick.items = items;
+                activeIndex = 0;
+                if (items.length > 0) {
+                    quickPick.activeItems = [items[0]];
+                }
+            };
+
+            quickPick.onDidChangeValue(buildItems);
+            quickPick.onDidAccept(async () => {
+                const selected = quickPick.activeItems[0];
+                if (selected?.node) {
+                    await revealNode(projectTreeView, selected.node);
+                    await runNodeCommand(selected.node);
+                }
+                quickPick.hide();
             });
-            if (!query) {
-                return;
-            }
-            const target = projectTreeProvider.findFirstMatch(query);
-            if (!target) {
-                vscode.window.showInformationMessage('No match found in project tree.');
-                return;
-            }
-            await projectTreeView.reveal(target, { select: true, focus: true, expand: true });
+            quickPick.onDidTriggerButton(async (button) => {
+                if (resultNodes.length === 0) {
+                    return;
+                }
+                const isPrev = (button as vscode.QuickInputButton).tooltip === 'Previous result';
+                if (isPrev) {
+                    activeIndex = (activeIndex - 1 + resultNodes.length) % resultNodes.length;
+                } else {
+                    activeIndex = (activeIndex + 1) % resultNodes.length;
+                }
+                const nextNode = resultNodes[activeIndex];
+                const items = quickPick.items as Array<vscode.QuickPickItem & { node?: VerilogNode }>;
+                const targetItem = items.find(i => i.node === nextNode);
+                if (targetItem) {
+                    quickPick.activeItems = [targetItem];
+                }
+                await revealNode(projectTreeView, nextNode);
+            });
+
+            quickPick.onDidHide(() => quickPick.dispose());
+            quickPick.show();
         },
     );
     context.subscriptions.push(searchProjectTreeCmd);
@@ -1607,19 +1728,79 @@ export function activate(context: vscode.ExtensionContext) {
     const searchHierarchyCmd = vscode.commands.registerCommand(
         'vetree-verilog.searchHierarchy',
         async () => {
-            const query = await vscode.window.showInputBox({
-                title: 'Search hierarchy',
-                prompt: 'Type a module or instance name',
+            const quickPick = vscode.window.createQuickPick<vscode.QuickPickItem & {
+                node?: HierarchyNode;
+            }>();
+            quickPick.title = 'Search hierarchy';
+            quickPick.placeholder = 'Type a module or instance name (* and ? supported)';
+            quickPick.matchOnDescription = true;
+            quickPick.matchOnDetail = true;
+            quickPick.buttons = [
+                { iconPath: new vscode.ThemeIcon('arrow-up'), tooltip: 'Previous result' },
+                { iconPath: new vscode.ThemeIcon('arrow-down'), tooltip: 'Next result' },
+            ];
+
+            const allNodes = hierarchyProvider.getAllNodes();
+            let resultNodes: HierarchyNode[] = [];
+            let activeIndex = 0;
+
+            const buildItems = (value: string) => {
+                const matcher = makeWildcardMatcher(value);
+                resultNodes = allNodes.filter(node => {
+                    const moduleName = node.moduleName ?? '';
+                    const instanceName = node.instanceName ?? '';
+                    const label = typeof node.label === 'string'
+                        ? node.label
+                        : node.label?.toString() ?? '';
+                    return matcher(moduleName) || matcher(instanceName) || matcher(label);
+                });
+
+                const items = resultNodes.map(node => {
+                    const label = typeof node.label === 'string'
+                        ? node.label
+                        : node.label?.toString() ?? '';
+                    const detail = node.instanceName
+                        ? `instance: ${node.instanceName}`
+                        : undefined;
+                    return { label, detail, node };
+                });
+                quickPick.items = items;
+                activeIndex = 0;
+                if (items.length > 0) {
+                    quickPick.activeItems = [items[0]];
+                }
+            };
+
+            quickPick.onDidChangeValue(buildItems);
+            quickPick.onDidAccept(async () => {
+                const selected = quickPick.activeItems[0];
+                if (selected?.node) {
+                    await revealNode(hierarchyTreeView, selected.node);
+                    await runNodeCommand(selected.node);
+                }
+                quickPick.hide();
             });
-            if (!query) {
-                return;
-            }
-            const target = hierarchyProvider.findFirstMatch(query);
-            if (!target) {
-                vscode.window.showInformationMessage('No match found in hierarchy.');
-                return;
-            }
-            await hierarchyTreeView.reveal(target, { select: true, focus: true, expand: true });
+            quickPick.onDidTriggerButton(async (button) => {
+                if (resultNodes.length === 0) {
+                    return;
+                }
+                const isPrev = (button as vscode.QuickInputButton).tooltip === 'Previous result';
+                if (isPrev) {
+                    activeIndex = (activeIndex - 1 + resultNodes.length) % resultNodes.length;
+                } else {
+                    activeIndex = (activeIndex + 1) % resultNodes.length;
+                }
+                const nextNode = resultNodes[activeIndex];
+                const items = quickPick.items as Array<vscode.QuickPickItem & { node?: HierarchyNode }>;
+                const targetItem = items.find(i => i.node === nextNode);
+                if (targetItem) {
+                    quickPick.activeItems = [targetItem];
+                }
+                await revealNode(hierarchyTreeView, nextNode);
+            });
+
+            quickPick.onDidHide(() => quickPick.dispose());
+            quickPick.show();
         },
     );
     context.subscriptions.push(searchHierarchyCmd);

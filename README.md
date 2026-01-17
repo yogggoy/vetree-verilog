@@ -79,6 +79,7 @@ You will see a "Verilog" activity bar container with:
 5) To find direct connections:
    - Right-click two instance nodes in the hierarchy and select **Endpoint A** / **Endpoint B**.
    - The **Direct Connections** view will show the pairs.
+6) Use the search icons in the view title bars to jump to the first match; `*` and `?` are supported.
 
 If a project uses a filelist, set `vetree-verilog.definesFile` so the extension scans only those files and honors flags from the filelist (including nested `-f` lists).
 
