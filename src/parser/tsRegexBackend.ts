@@ -6,6 +6,7 @@ import {
     ParsedModule,
     VerilogParserBackend,
     PortInfo,
+    PortBinding,
 } from './types';
 
 export class TsRegexParserBackend implements VerilogParserBackend {
@@ -354,10 +355,72 @@ function parseInstantiationsInText(
         const pos = offsetToPosition(clean, globalOffset);
         const loc = new vscode.Location(uri, pos);
 
-        result.push({ moduleName, instanceName, location: loc });
+        let bindings: PortBinding[] = [];
+        const openParenIndex = m.index + m[0].lastIndexOf('(');
+        if (openParenIndex >= 0) {
+            const closeParenIndex = findMatchingParen(clean, openParenIndex, bodyEnd);
+            if (closeParenIndex !== -1) {
+                const inner = clean.slice(openParenIndex + 1, closeParenIndex);
+                bindings = parseNamedPortBindings(inner, openParenIndex + 1, uri, clean);
+            }
+        }
+
+        result.push({ moduleName, instanceName, location: loc, bindings });
     }
 
     return result;
+}
+
+function parseNamedPortBindings(
+    text: string,
+    baseOffset: number,
+    uri: vscode.Uri,
+    clean: string,
+): PortBinding[] {
+    const bindings: PortBinding[] = [];
+    let i = 0;
+
+    while (i < text.length) {
+        const ch = text[i];
+        if (ch !== '.') {
+            i++;
+            continue;
+        }
+
+        i++;
+        const nameStart = i;
+        while (i < text.length && /[a-zA-Z0-9_]/.test(text[i])) {
+            i++;
+        }
+        const portName = text.slice(nameStart, i).trim();
+        while (i < text.length && /\s/.test(text[i])) {
+            i++;
+        }
+        if (i >= text.length || text[i] !== '(') {
+            continue;
+        }
+
+        const exprStart = i + 1;
+        const matchEnd = findMatchingParen(text, i, text.length - 1);
+        if (matchEnd === -1) {
+            break;
+        }
+        const expr = text.slice(exprStart, matchEnd).trim();
+        if (portName) {
+            const loc = new vscode.Location(
+                uri,
+                offsetToPosition(clean, baseOffset + nameStart),
+            );
+            bindings.push({
+                portName,
+                expr,
+                location: loc,
+            });
+        }
+        i = matchEnd + 1;
+    }
+
+    return bindings;
 }
 
 function findMatchingParen(text: string, openIndex: number, maxIndex: number): number {

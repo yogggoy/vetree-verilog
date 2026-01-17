@@ -61,6 +61,18 @@
       {
         "command": "vetree-verilog.setTopModule",
         "title": "vetree: Set as Top Module"
+      },
+      {
+        "command": "vetree-verilog.selectEndpoint",
+        "title": "vetree: Select as Endpoint A"
+      },
+      {
+        "command": "vetree-verilog.selectEndpoint",
+        "title": "vetree: Select as Endpoint B"
+      },
+      {
+        "command": "vetree-verilog.showDirectConnections",
+        "title": "vetree: Show Direct Connections"
       }
     ],
     "menus": {
@@ -98,6 +110,23 @@
         {
           "command": "vetree-verilog.setTopModule",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.selectEndpoint",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
+          "group": "navigation",
+          "args": "A"
+        },
+        {
+          "command": "vetree-verilog.selectEndpoint",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
+          "group": "navigation",
+          "args": "B"
+        },
+        {
+          "command": "vetree-verilog.showDirectConnections",
+          "when": "view == vetreeVerilogHierarchyView",
           "group": "navigation"
         }
       ]

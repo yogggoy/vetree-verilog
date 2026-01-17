@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import {
     ParsedDesign,
+    InstanceRef,
 } from './parser/types';
 import { TsRegexParserBackend } from './parser/tsRegexBackend';
 
@@ -31,6 +32,8 @@ class VerilogNode extends vscode.TreeItem {
             location?: vscode.Location;    // module
             moduleName?: string;           // module name
             parent?: VerilogNode;
+            contextValue?: string;
+            description?: string;
         },
     ) {
         super(label, collapsibleState);
@@ -39,6 +42,9 @@ class VerilogNode extends vscode.TreeItem {
         this.uri = options?.uri;
         this.location = options?.location;
         this.parent = options?.parent;
+        if (options?.description) {
+            this.description = options.description;
+        }
 
         if (options?.location) {
             // Module node
@@ -47,7 +53,7 @@ class VerilogNode extends vscode.TreeItem {
                 title: 'Open Module Definition',
                 arguments: [options.location.uri, { selection: options.location.range }],
             };
-            this.contextValue = 'verilogModule';
+            this.contextValue = options?.contextValue ?? 'verilogModule';
         } else if (options?.uri) {
             // File node
             this.resourceUri = options.uri;
@@ -56,10 +62,10 @@ class VerilogNode extends vscode.TreeItem {
                 title: 'Open Verilog File',
                 arguments: [options.uri],
             };
-            this.contextValue = 'verilogFile';
+            this.contextValue = options?.contextValue ?? 'verilogFile';
         } else {
             // Folder
-            this.contextValue = 'verilogFolder';
+            this.contextValue = options?.contextValue ?? 'verilogFolder';
         }
     }
 }
@@ -148,17 +154,31 @@ class VerilogProjectTreeProvider implements vscode.TreeDataProvider<VerilogNode>
             const modulesForFile =
                 this.design?.modulesByFile.get(temp.uri.toString()) ?? [];
 
-            const moduleNodes = modulesForFile.map(m =>
-                new VerilogNode(
+            const moduleNodes = modulesForFile.map(m => {
+                const portNodes = m.ports.map(p =>
+                    new VerilogNode(
+                        `${p.direction} ${p.name}`,
+                        vscode.TreeItemCollapsibleState.None,
+                        {
+                            location: p.location,
+                            contextValue: 'verilogPort',
+                            description: p.rangeText ?? '',
+                        },
+                    ),
+                );
+                return new VerilogNode(
                     `module ${m.name}`,
-                    vscode.TreeItemCollapsibleState.None,
+                    portNodes.length > 0
+                        ? vscode.TreeItemCollapsibleState.Collapsed
+                        : vscode.TreeItemCollapsibleState.None,
                     {
                         location: new vscode.Location(m.uri, m.definitionRange),
                         moduleName: m.name,
+                        children: portNodes,
                         parent: undefined,
                     },
-                ),
-            );
+                );
+            });
 
             if (moduleNodes.length > 0) {
                 node = new VerilogNode(
@@ -172,6 +192,9 @@ class VerilogProjectTreeProvider implements vscode.TreeDataProvider<VerilogNode>
                 );
                 for (const child of moduleNodes) {
                     child.parent = node;
+                    for (const port of child.children ?? []) {
+                        port.parent = child;
+                    }
                 }
                 return node;
             }
@@ -237,6 +260,8 @@ class HierarchyNode extends vscode.TreeItem {
     public readonly definitionLocation?: vscode.Location;
     public readonly instanceLocation?: vscode.Location;
     public parent?: HierarchyNode;
+    public instanceName?: string;
+    public parentModuleName?: string;
 
     constructor(
         public moduleName: string,
@@ -247,6 +272,9 @@ class HierarchyNode extends vscode.TreeItem {
             definitionLocation?: vscode.Location;
             instanceLocation?: vscode.Location;
             parent?: HierarchyNode;
+            instanceName?: string;
+            parentModuleName?: string;
+            contextValue?: string;
         },
     ) {
         super(label, collapsibleState);
@@ -254,7 +282,9 @@ class HierarchyNode extends vscode.TreeItem {
         this.definitionLocation = options?.definitionLocation;
         this.instanceLocation = options?.instanceLocation;
         this.parent = options?.parent;
-        this.contextValue = 'verilogModuleHierarchy';
+        this.instanceName = options?.instanceName;
+        this.parentModuleName = options?.parentModuleName;
+        this.contextValue = options?.contextValue ?? 'verilogModuleHierarchy';
 
         const target = this.instanceLocation ?? this.definitionLocation;
         if (target) {
@@ -416,7 +446,13 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
                     inst.moduleName,
                     `${inst.instanceName}: ${inst.moduleName} (external)`,
                     vscode.TreeItemCollapsibleState.None,
-                    { instanceLocation: inst.location, parent: undefined },
+                    {
+                        instanceLocation: inst.location,
+                        parent: undefined,
+                        instanceName: inst.instanceName,
+                        parentModuleName: name,
+                        contextValue: 'verilogModuleInstance',
+                    },
                 );
                 this.stats.nodeCount++;
                 children.push(externalNode);
@@ -436,6 +472,9 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
                     safeDepth + 1,
                 );
                 childNode.label = `${inst.instanceName}: ${t.name}`;
+                childNode.instanceName = inst.instanceName;
+                childNode.parentModuleName = name;
+                childNode.contextValue = 'verilogModuleInstance';
                 children.push(childNode);
             }
         }
@@ -610,6 +649,64 @@ function makeWorkspaceGlob(
     return baseRel ? `${baseRel}/${normalized}` : normalized;
 }
 
+function findDirectConnections(
+    design: ParsedDesign,
+    parentModule: string,
+    instanceA: string,
+    instanceB: string,
+): string[] {
+    const modules = design.modulesByName.get(parentModule) ?? [];
+    let instA: InstanceRef | undefined;
+    let instB: InstanceRef | undefined;
+
+    for (const mod of modules) {
+        const a = mod.instances.find(i => i.instanceName === instanceA);
+        const b = mod.instances.find(i => i.instanceName === instanceB);
+        if (a && b) {
+            instA = a;
+            instB = b;
+            break;
+        }
+    }
+
+    if (!instA || !instB) {
+        return [];
+    }
+
+    const normalize = (expr: string) => expr.replace(/\s+/g, '');
+    const mapBindings = (bindings: typeof instA.bindings) => {
+        const map = new Map<string, string[]>();
+        for (const b of bindings) {
+            const key = normalize(b.expr);
+            if (!key) {
+                continue;
+            }
+            const list = map.get(key) ?? [];
+            list.push(b.portName);
+            map.set(key, list);
+        }
+        return map;
+    };
+
+    const mapA = mapBindings(instA.bindings);
+    const mapB = mapBindings(instB.bindings);
+    const result: string[] = [];
+
+    for (const [expr, portsA] of mapA.entries()) {
+        const portsB = mapB.get(expr);
+        if (!portsB) {
+            continue;
+        }
+        for (const pa of portsA) {
+            for (const pb of portsB) {
+                result.push(`${instA.instanceName}.${pa} - ${instB.instanceName}.${pb}`);
+            }
+        }
+    }
+
+    return result;
+}
+
 async function filterFilesBySize(
     files: vscode.Uri[],
     maxFileSizeMB: number,
@@ -729,6 +826,8 @@ export function activate(context: vscode.ExtensionContext) {
     let refreshPending = false;
     let lastDuplicateWarning = '';
     let lastTopModuleInfo = '';
+    let endpointA: { parentModule: string; instance: string } | null = null;
+    let endpointB: { parentModule: string; instance: string } | null = null;
 
     const isDebugEnabled = () =>
         vscode.workspace.getConfiguration('vetree-verilog').get<boolean>('debugLogging') ?? false;
@@ -978,6 +1077,74 @@ export function activate(context: vscode.ExtensionContext) {
         },
     );
     context.subscriptions.push(revealInProjectTreeCmd);
+
+    const selectEndpointCmd = vscode.commands.registerCommand(
+        'vetree-verilog.selectEndpoint',
+        async (item: HierarchyNode, slot?: 'A' | 'B') => {
+            if (!item?.instanceName || !item?.parentModuleName) {
+                vscode.window.showInformationMessage('Select an instance node.');
+                return;
+            }
+            if (slot !== 'A' && slot !== 'B') {
+                const pick = await vscode.window.showQuickPick(['A', 'B'], {
+                    title: 'Select endpoint slot',
+                });
+                if (!pick) {
+                    return;
+                }
+                slot = pick as 'A' | 'B';
+            }
+            const data = { parentModule: item.parentModuleName, instance: item.instanceName };
+            if (slot === 'A') {
+                endpointA = data;
+            } else {
+                endpointB = data;
+            }
+            vscode.window.showInformationMessage(
+                `Endpoint ${slot} set to ${data.instance} (in ${data.parentModule}).`,
+            );
+        },
+    );
+    context.subscriptions.push(selectEndpointCmd);
+
+    const showDirectConnectionsCmd = vscode.commands.registerCommand(
+        'vetree-verilog.showDirectConnections',
+        async () => {
+            if (!endpointA || !endpointB) {
+                vscode.window.showInformationMessage('Select endpoint A and B first.');
+                return;
+            }
+            if (endpointA.parentModule !== endpointB.parentModule) {
+                vscode.window.showInformationMessage(
+                    'Endpoints must be in the same parent module.',
+                );
+                return;
+            }
+
+            const design = currentDesign;
+            if (!design) {
+                vscode.window.showInformationMessage('Verilog design is not indexed yet.');
+                return;
+            }
+
+            const connections = findDirectConnections(
+                design,
+                endpointA.parentModule,
+                endpointA.instance,
+                endpointB.instance,
+            );
+            if (connections.length === 0) {
+                vscode.window.showInformationMessage('No direct connections found.');
+                return;
+            }
+
+            await vscode.window.showQuickPick(
+                connections.map(c => ({ label: c })),
+                { title: 'Direct connections' },
+            );
+        },
+    );
+    context.subscriptions.push(showDirectConnectionsCmd);
 
     const setTopModuleCmd = vscode.commands.registerCommand(
         'vetree-verilog.setTopModule',

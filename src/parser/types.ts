@@ -13,6 +13,13 @@ export interface InstanceRef {
     moduleName: string;
     instanceName: string;
     location: vscode.Location;
+    bindings: PortBinding[];
+}
+
+export interface PortBinding {
+    portName: string;
+    expr: string;
+    location: vscode.Location;
 }
 
 export interface ParsedModule {
