@@ -34,6 +34,14 @@ You will see a "Verilog" activity bar container with:
 - Verilog Hierarchy
 - Direct Connections
 
+## Examples
+
+![Project tree example](docs/images/project_tree_example.png)
+
+---
+
+![Hierarchy example](docs/images/hierarchy_example.png)
+
 ## Commands
 
 - `vetree: Refresh Tree`
