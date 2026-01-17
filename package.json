@@ -2,8 +2,8 @@
   "name": "vetree-verilog",
   "displayName": "vetree-verilog",
   "description": "Verilog project tree viewer",
-  "version": "0.0.1",
-  "publisher": "vetree",
+  "version": "1.0.0",
+  "publisher": "nyah",
   "license": "MIT",
   "repository": {
     "type": "git",
