@@ -1,71 +1,73 @@
-# vetree-verilog README
+# vetree-verilog
 
-This is the README for your extension "vetree-verilog". After writing up a brief description, we recommend including the following sections.
+VS Code extension for exploring Verilog/SystemVerilog projects. It builds a project tree, a module hierarchy, and provides navigation to module definitions, instances, and ports.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- Project tree view of folders, files, and modules.
+- Hierarchy view with module instances and navigation to instantiation sites.
+- Go to definition (F12) for module names.
+- QuickPick list of module ports with jump to declaration.
+- Auto refresh on file changes.
+- Optional preprocessing support for `define/ifdef/ifndef/elsif/else/endif` using a `.f` file.
 
-For example if there is an image subfolder under your extension project workspace:
+## Views
 
-\!\[feature X\]\(images/feature-x.png\)
+You will see a "Verilog" activity bar container with:
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- Verilog Project Tree
+- Verilog Hierarchy
 
-## Requirements
+## Commands
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- `vetree: Refresh Tree`
+- `vetree: Refresh Hierarchy`
+- `vetree: Show Module Ports`
+- `vetree: Go to Module Definition`
+- `vetree: Reveal in Hierarchy`
+- `vetree: Reveal in Project Tree`
 
-## Extension Settings
+## Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+- `vetree-verilog.definesFile`: Path to a `.f` file that provides `+define+` flags.
+- `vetree-verilog.maxFileSizeMB`: Skip files larger than this size (MB). Set to `0` to disable.
+- `vetree-verilog.quickScan`: Skip preprocessing for faster scans.
+- `vetree-verilog.maxHierarchyDepth`: Maximum depth for hierarchy traversal.
+- `vetree-verilog.debugLogging`: Enable verbose logging for troubleshooting.
+- `vetree-verilog.skipHierarchyBuild`: Skip hierarchy building (debugging).
+- `vetree-verilog.hierarchyResolve`: How to resolve duplicate module names (`all` or `first`).
+- `vetree-verilog.hierarchyTopModule`: Restrict hierarchy roots to a specific top module name.
 
-For example:
+## Notes
 
-This extension contributes the following settings:
+- If a project contains many duplicate module names (for example vendor tags), use `hierarchyResolve: "first"` or set `hierarchyTopModule` to keep the hierarchy stable.
+- Preprocessing is intentionally minimal and does not yet handle `include` files.
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+## Example `.f` file
 
-## Known Issues
+```text
+// Defines
++define+SIMV
++define+SIMD
++define+N64
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+// Include dirs (currently ignored by the parser)
++incdir+uart
+
+// Sources
+chip.sv
+cpu.sv
+decode.sv
+commit.sv
+```
+
+## Troubleshooting
+
+- Enable `vetree-verilog.debugLogging` to see scan timing, memory usage, and hierarchy stats.
+- If the hierarchy build stalls, set `vetree-verilog.skipHierarchyBuild` to confirm the issue is isolated to hierarchy construction.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+Initial preview with project tree, hierarchy, definition navigation, and ports listing.

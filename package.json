@@ -36,27 +36,27 @@
     "commands": [
       {
         "command": "vetree-verilog.refreshTree",
-        "title": "Verilog: Refresh Tree"
+        "title": "vetree: Refresh Tree"
       },
       {
         "command": "vetree-verilog.refreshHierarchy",
-        "title": "Verilog: Refresh Hierarchy"
+        "title": "vetree: Refresh Hierarchy"
       },
       {
         "command": "vetree-verilog.showModulePorts",
-        "title": "Verilog: Show Module Ports"
+        "title": "vetree: Show Module Ports"
       },
       {
         "command": "vetree-verilog.goToDefinition",
-        "title": "Verilog: Go to Module Definition"
+        "title": "vetree: Go to Module Definition"
       },
       {
         "command": "vetree-verilog.revealInHierarchy",
-        "title": "Verilog: Reveal in Hierarchy"
+        "title": "vetree: Reveal in Hierarchy"
       },
       {
         "command": "vetree-verilog.revealInProjectTree",
-        "title": "Verilog: Reveal in Project Tree"
+        "title": "vetree: Reveal in Project Tree"
       }
     ],
     "menus": {
