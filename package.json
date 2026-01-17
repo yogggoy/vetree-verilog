@@ -30,6 +30,10 @@
         {
           "id": "vetreeVerilogHierarchyView",
           "name": "Verilog Hierarchy"
+        },
+        {
+          "id": "vetreeVerilogConnectionsView",
+          "name": "Direct Connections"
         }
       ]
     },
@@ -67,11 +71,11 @@
         "title": "vetree: Clear Top Module"
       },
       {
-        "command": "vetree-verilog.selectEndpoint",
+        "command": "vetree-verilog.selectEndpointA",
         "title": "vetree: Select as Endpoint A"
       },
       {
-        "command": "vetree-verilog.selectEndpoint",
+        "command": "vetree-verilog.selectEndpointB",
         "title": "vetree: Select as Endpoint B"
       },
       {
@@ -84,79 +88,79 @@
         {
           "command": "vetree-verilog.showModulePorts",
           "when": "view == vetreeVerilogView && viewItem == verilogModule",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "vetree-verilog.revealInHierarchy",
           "when": "view == vetreeVerilogView && viewItem == verilogModule",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "vetree-verilog.setTopModule",
           "when": "view == vetreeVerilogView && viewItem == verilogModule",
-          "group": "navigation"
+          "group": "selection@2"
         },
         {
           "command": "vetree-verilog.clearTopModule",
           "when": "view == vetreeVerilogView",
-          "group": "navigation"
+          "group": "selection@2"
         },
         {
           "command": "vetree-verilog.showModulePorts",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "vetree-verilog.goToDefinition",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "vetree-verilog.revealInProjectTree",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "vetree-verilog.setTopModule",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
-          "group": "navigation"
+          "group": "selection@2"
         },
         {
           "command": "vetree-verilog.clearTopModule",
           "when": "view == vetreeVerilogHierarchyView",
-          "group": "navigation"
+          "group": "selection@2"
         },
         {
           "command": "vetree-verilog.goToDefinition",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "vetree-verilog.revealInProjectTree",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "vetree-verilog.setTopModule",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
-          "group": "navigation"
+          "group": "selection@2"
         },
         {
-          "command": "vetree-verilog.selectEndpoint",
+          "command": "vetree-verilog.selectEndpointA",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
-          "group": "navigation",
-          "args": "A"
+          "group": "analysis@3",
+          "args": {}
         },
         {
-          "command": "vetree-verilog.selectEndpoint",
+          "command": "vetree-verilog.selectEndpointB",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
-          "group": "navigation",
-          "args": "B"
+          "group": "analysis@3",
+          "args": {}
         },
         {
           "command": "vetree-verilog.showDirectConnections",
           "when": "view == vetreeVerilogHierarchyView",
-          "group": "navigation"
+          "group": "analysis@3"
         }
       ]
     },

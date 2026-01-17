@@ -519,6 +519,48 @@ class VerilogHierarchyProvider implements vscode.TreeDataProvider<HierarchyNode>
     }
 }
 
+type ConnectionInfo = {
+    label: string;
+    location?: vscode.Location;
+};
+
+class ConnectionNode extends vscode.TreeItem {
+    constructor(label: string, location?: vscode.Location) {
+        super(label, vscode.TreeItemCollapsibleState.None);
+        if (location) {
+            this.command = {
+                command: 'vscode.open',
+                title: 'Open Connection',
+                arguments: [location.uri, { selection: location.range }],
+            };
+        }
+    }
+}
+
+class DirectConnectionsProvider implements vscode.TreeDataProvider<ConnectionNode> {
+    private _onDidChangeTreeData = new vscode.EventEmitter<ConnectionNode | undefined | void>();
+    readonly onDidChangeTreeData: vscode.Event<ConnectionNode | undefined | void> =
+        this._onDidChangeTreeData.event;
+    private data: ConnectionNode[] = [];
+
+    update(connections: ConnectionInfo[]): void {
+        this.data = connections.map(c => new ConnectionNode(c.label, c.location));
+        this._onDidChangeTreeData.fire();
+    }
+
+    getFirst(): ConnectionNode | undefined {
+        return this.data[0];
+    }
+
+    getTreeItem(element: ConnectionNode): vscode.TreeItem {
+        return element;
+    }
+
+    getChildren(): Thenable<ConnectionNode[]> {
+        return Promise.resolve(this.data);
+    }
+}
+
 type FilelistData = {
     defines: Set<string>;
     files: vscode.Uri[];
@@ -654,7 +696,7 @@ function findDirectConnections(
     parentModule: string,
     instanceA: string,
     instanceB: string,
-): string[] {
+): ConnectionInfo[] {
     const modules = design.modulesByName.get(parentModule) ?? [];
     let instA: InstanceRef | undefined;
     let instB: InstanceRef | undefined;
@@ -675,14 +717,14 @@ function findDirectConnections(
 
     const normalize = (expr: string) => expr.replace(/\s+/g, '');
     const mapBindings = (bindings: typeof instA.bindings) => {
-        const map = new Map<string, string[]>();
+        const map = new Map<string, typeof instA.bindings>();
         for (const b of bindings) {
             const key = normalize(b.expr);
             if (!key) {
                 continue;
             }
             const list = map.get(key) ?? [];
-            list.push(b.portName);
+            list.push(b);
             map.set(key, list);
         }
         return map;
@@ -690,7 +732,7 @@ function findDirectConnections(
 
     const mapA = mapBindings(instA.bindings);
     const mapB = mapBindings(instB.bindings);
-    const result: string[] = [];
+    const result: ConnectionInfo[] = [];
 
     for (const [expr, portsA] of mapA.entries()) {
         const portsB = mapB.get(expr);
@@ -699,7 +741,10 @@ function findDirectConnections(
         }
         for (const pa of portsA) {
             for (const pb of portsB) {
-                result.push(`${instA.instanceName}.${pa} - ${instB.instanceName}.${pb}`);
+                result.push({
+                    label: `${instA.instanceName}.${pa.portName} - ${instB.instanceName}.${pb.portName}`,
+                    location: pa.location,
+                });
             }
         }
     }
@@ -810,6 +855,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     const projectTreeProvider = new VerilogProjectTreeProvider();
     const hierarchyProvider = new VerilogHierarchyProvider();
+    const connectionsProvider = new DirectConnectionsProvider();
 
     const projectTreeView = vscode.window.createTreeView('vetreeVerilogView', {
         treeDataProvider: projectTreeProvider,
@@ -819,7 +865,11 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: hierarchyProvider,
         showCollapseAll: true,
     });
-    context.subscriptions.push(projectTreeView, hierarchyTreeView);
+    const connectionsTreeView = vscode.window.createTreeView('vetreeVerilogConnectionsView', {
+        treeDataProvider: connectionsProvider,
+        showCollapseAll: false,
+    });
+    context.subscriptions.push(projectTreeView, hierarchyTreeView, connectionsTreeView);
 
     let refreshTimer: NodeJS.Timeout | undefined;
     let refreshInProgress = false;
@@ -1078,34 +1128,32 @@ export function activate(context: vscode.ExtensionContext) {
     );
     context.subscriptions.push(revealInProjectTreeCmd);
 
-    const selectEndpointCmd = vscode.commands.registerCommand(
-        'vetree-verilog.selectEndpoint',
-        async (item: HierarchyNode, slot?: 'A' | 'B') => {
-            if (!item?.instanceName || !item?.parentModuleName) {
-                vscode.window.showInformationMessage('Select an instance node.');
-                return;
-            }
-            if (slot !== 'A' && slot !== 'B') {
-                const pick = await vscode.window.showQuickPick(['A', 'B'], {
-                    title: 'Select endpoint slot',
-                });
-                if (!pick) {
-                    return;
-                }
-                slot = pick as 'A' | 'B';
-            }
-            const data = { parentModule: item.parentModuleName, instance: item.instanceName };
-            if (slot === 'A') {
-                endpointA = data;
-            } else {
-                endpointB = data;
-            }
-            vscode.window.showInformationMessage(
-                `Endpoint ${slot} set to ${data.instance} (in ${data.parentModule}).`,
-            );
-        },
+    const setEndpoint = async (item: HierarchyNode, slot: 'A' | 'B') => {
+        if (!item?.instanceName || !item?.parentModuleName) {
+            vscode.window.showInformationMessage('Select an instance node.');
+            return;
+        }
+        const data = { parentModule: item.parentModuleName, instance: item.instanceName };
+        if (slot === 'A') {
+            endpointA = data;
+        } else {
+            endpointB = data;
+        }
+        vscode.window.showInformationMessage(
+            `Endpoint ${slot} set to ${data.instance} (in ${data.parentModule}).`,
+        );
+        await updateDirectConnections();
+    };
+
+    const selectEndpointACmd = vscode.commands.registerCommand(
+        'vetree-verilog.selectEndpointA',
+        async (item: HierarchyNode) => setEndpoint(item, 'A'),
     );
-    context.subscriptions.push(selectEndpointCmd);
+    const selectEndpointBCmd = vscode.commands.registerCommand(
+        'vetree-verilog.selectEndpointB',
+        async (item: HierarchyNode) => setEndpoint(item, 'B'),
+    );
+    context.subscriptions.push(selectEndpointACmd, selectEndpointBCmd);
 
     const showDirectConnectionsCmd = vscode.commands.registerCommand(
         'vetree-verilog.showDirectConnections',
@@ -1134,17 +1182,52 @@ export function activate(context: vscode.ExtensionContext) {
                 endpointB.instance,
             );
             if (connections.length === 0) {
+                connectionsProvider.update([]);
                 vscode.window.showInformationMessage('No direct connections found.');
                 return;
             }
 
-            await vscode.window.showQuickPick(
-                connections.map(c => ({ label: c })),
-                { title: 'Direct connections' },
-            );
+            connectionsProvider.update(connections);
+            const first = connectionsProvider.getFirst();
+            if (first) {
+                await connectionsTreeView.reveal(first, { focus: true, select: true });
+            }
         },
     );
     context.subscriptions.push(showDirectConnectionsCmd);
+
+    const updateDirectConnections = async () => {
+        if (!endpointA || !endpointB) {
+            return;
+        }
+        if (endpointA.parentModule !== endpointB.parentModule) {
+            vscode.window.showInformationMessage(
+                'Endpoints must be in the same parent module.',
+            );
+            return;
+        }
+
+        const design = currentDesign;
+        if (!design) {
+            return;
+        }
+
+        const connections = findDirectConnections(
+            design,
+            endpointA.parentModule,
+            endpointA.instance,
+            endpointB.instance,
+        );
+        connectionsProvider.update(connections);
+        if (connections.length === 0) {
+            vscode.window.showInformationMessage('No direct connections found.');
+            return;
+        }
+        const first = connectionsProvider.getFirst();
+        if (first) {
+            await connectionsTreeView.reveal(first, { focus: true, select: true });
+        }
+    };
 
     const setTopModuleCmd = vscode.commands.registerCommand(
         'vetree-verilog.setTopModule',

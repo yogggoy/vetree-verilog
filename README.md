@@ -19,6 +19,7 @@ You will see a "Verilog" activity bar container with:
 
 - Verilog Project Tree
 - Verilog Hierarchy
+- Direct Connections
 
 ## Commands
 
@@ -52,6 +53,7 @@ You will see a "Verilog" activity bar container with:
 - Preprocessing is intentionally minimal and does not yet handle `include` files.
 - When `definesFile` is set and resolves to files, only those files are scanned.
 - Direct connections are based on named port bindings within the same parent module.
+- Direct connection results appear in the "Direct Connections" view.
 
 ## Example `.f` file
 
