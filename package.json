@@ -63,6 +63,10 @@
         "title": "vetree: Set as Top Module"
       },
       {
+        "command": "vetree-verilog.clearTopModule",
+        "title": "vetree: Clear Top Module"
+      },
+      {
         "command": "vetree-verilog.selectEndpoint",
         "title": "vetree: Select as Endpoint A"
       },
@@ -93,6 +97,11 @@
           "group": "navigation"
         },
         {
+          "command": "vetree-verilog.clearTopModule",
+          "when": "view == vetreeVerilogView",
+          "group": "navigation"
+        },
+        {
           "command": "vetree-verilog.showModulePorts",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
           "group": "navigation"
@@ -110,6 +119,26 @@
         {
           "command": "vetree-verilog.setTopModule",
           "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleHierarchy",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.clearTopModule",
+          "when": "view == vetreeVerilogHierarchyView",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.goToDefinition",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.revealInProjectTree",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
+          "group": "navigation"
+        },
+        {
+          "command": "vetree-verilog.setTopModule",
+          "when": "view == vetreeVerilogHierarchyView && viewItem == verilogModuleInstance",
           "group": "navigation"
         },
         {

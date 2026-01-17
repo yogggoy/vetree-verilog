@@ -5,11 +5,13 @@ VS Code extension for exploring Verilog/SystemVerilog projects. It builds a proj
 ## Features
 
 - Project tree view of folders, files, and modules.
+- Module ports shown under each module node.
 - Hierarchy view with module instances and navigation to instantiation sites.
 - Go to definition (F12) for module names.
 - QuickPick list of module ports with jump to declaration.
 - Auto refresh on file changes.
-- Optional preprocessing support for `define/ifdef/ifndef/elsif/else/endif` using a `.f` file.
+- Optional preprocessing support for `define/ifdef/ifndef/elsif/else/endif`.
+- Direct connection lookup between two instances (named port bindings).
 
 ## Views
 
@@ -26,6 +28,11 @@ You will see a "Verilog" activity bar container with:
 - `vetree: Go to Module Definition`
 - `vetree: Reveal in Hierarchy`
 - `vetree: Reveal in Project Tree`
+- `vetree: Set as Top Module`
+- `vetree: Clear Top Module`
+- `vetree: Select as Endpoint A`
+- `vetree: Select as Endpoint B`
+- `vetree: Show Direct Connections`
 
 ## Settings
 
@@ -41,7 +48,10 @@ You will see a "Verilog" activity bar container with:
 ## Notes
 
 - If a project contains many duplicate module names (for example vendor tags), use `hierarchyResolve: "first"` or set `hierarchyTopModule` to keep the hierarchy stable.
+- You can set the top module from the tree context menu and clear it with `vetree: Clear Top Module`.
 - Preprocessing is intentionally minimal and does not yet handle `include` files.
+- When `definesFile` is set and resolves to files, only those files are scanned.
+- Direct connections are based on named port bindings within the same parent module.
 
 ## Example `.f` file
 
@@ -62,6 +72,7 @@ chip.sv
 cpu.sv
 decode.sv
 commit.sv
+rtl/**/*.sv
 ```
 
 ## Troubleshooting

@@ -1167,6 +1167,17 @@ export function activate(context: vscode.ExtensionContext) {
     );
     context.subscriptions.push(setTopModuleCmd);
 
+    const clearTopModuleCmd = vscode.commands.registerCommand(
+        'vetree-verilog.clearTopModule',
+        async () => {
+            const config = vscode.workspace.getConfiguration('vetree-verilog');
+            await config.update('hierarchyTopModule', '', vscode.ConfigurationTarget.Workspace);
+            vscode.window.showInformationMessage('Top module cleared.');
+            scheduleFullRefresh();
+        },
+    );
+    context.subscriptions.push(clearTopModuleCmd);
+
     const goToDefinitionCmd = vscode.commands.registerCommand(
         'vetree-verilog.goToDefinition',
         async (item: HierarchyNode) => {
