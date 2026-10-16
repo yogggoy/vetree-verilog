@@ -394,7 +394,7 @@ function parseInstantiationsInText(
 
     // Also without '\n' at line start
     const instRegex =
-        /^[ \t]*(?:[a-zA-Z_]\w*\s*:\s*)?([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*(?:#\s*\([^;]*\))?\s*\(/gm;
+        /^[ \t]*(?:[a-zA-Z_]\w*\s*:\s*)?([a-zA-Z_]\w*)(?:\s*#\s*\([^;]*?\)\s*|\s+)([a-zA-Z_]\w*)\s*\(/gm;
 
     const keywords = new Set([
         'if', 'else', 'begin', 'end', 'case', 'casex', 'casez',
